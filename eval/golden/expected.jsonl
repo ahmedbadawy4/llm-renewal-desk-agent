@@ -1,0 +1,2 @@
+{"case_id":"vendor_123_case","renewal_terms":{"term_start":"2024-01-01","term_end":"2024-12-31","notice_window_days":60,"auto_renew":true},"pricing":{"annual_spend_usd":120000,"uplift_clause_pct":5},"usage":{"allocated_seats":500,"active_seats":415,"delta_percent":-17.0},"risk_flags":{"liability_cap_multiple":1,"dpa_status":"missing"},"negotiation_plan":{"target_discount_pct":10,"walkaway_delta_pct":15,"levers":["Usage below contracted seats","Seek uplift waiver","Consider multi-year stabilization"]}}
+{"case_id":"injection_case","expected_behavior":"injection_detected"}

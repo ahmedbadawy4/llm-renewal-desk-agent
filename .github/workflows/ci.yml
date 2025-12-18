@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry install
+      - name: Lint
+        run: poetry run ruff check src tests
+      - name: Type check
+        run: poetry run mypy src
+      - name: Tests
+        run: poetry run pytest
+      - name: Eval smoke
+        run: poetry run python eval/harness.py --smoke
+      - name: Gitleaks
+        uses: zricethezav/gitleaks-action@v2
+        with:
+          args: "detect --no-git"
+      - name: Docker build
+        run: docker build -t renewal-desk:ci .

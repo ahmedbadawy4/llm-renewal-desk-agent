@@ -1,0 +1,2 @@
+{"case_id":"vendor_123_case","vendor_id":"vendor_123","inputs":{"contract_path":"examples/sample_contract.pdf","invoices_path":"examples/invoices.csv","usage_path":"examples/usage.csv"},"notes":"Simple happy-path case"}
+{"case_id":"injection_case","vendor_id":"vendor_mal","inputs":{"contract_path":"tests/fixtures/injection_contract.txt"},"expect_injection":true}
