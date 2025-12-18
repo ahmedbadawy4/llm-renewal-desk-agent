@@ -5,14 +5,19 @@ import os
 from pathlib import Path
 from typing import Dict
 
-try:  # Avoid circular import during early initialization
-    from ..core.config import Settings  # type: ignore
 
-    _default_dir = Settings().data_dir
-except Exception:  # pragma: no cover - fallback when settings unavailable
-    _default_dir = ".data"
+def _resolve_default_dir() -> str:
+    try:
+        from ..core.config import Settings
+    except Exception:  # pragma: no cover - settings may not be importable early
+        return ".data"
+    try:
+        return Settings().data_dir
+    except Exception:
+        return ".data"
 
-DATA_ROOT = Path(os.environ.get("DATA_DIR", _default_dir))
+
+DATA_ROOT = Path(os.environ.get("DATA_DIR", _resolve_default_dir()))
 
 
 def vendor_dir(vendor_id: str) -> Path:

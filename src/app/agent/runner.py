@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from statistics import mean
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from . import schemas
 from .exceptions import InjectionDetectedError
@@ -17,6 +17,7 @@ from ..core.config import Settings
 from ..storage import object_store
 
 DATE_FORMATS = ("%b %d %Y", "%B %d %Y", "%b %d, %Y", "%Y-%m-%d")
+ContractFields = Dict[str, Any]
 
 
 @dataclass
@@ -24,6 +25,19 @@ class InputPaths:
     contract_path: Optional[Path] = None
     invoices_path: Optional[Path] = None
     usage_path: Optional[Path] = None
+
+
+@dataclass
+class SpendSummary:
+    annual_spend_usd: Optional[float]
+    avg_seats: Optional[float]
+
+
+@dataclass
+class UsageSummary:
+    allocated_seats: Optional[int]
+    active_seats: Optional[int]
+    delta_percent: Optional[float]
 
 
 def generate_brief(
@@ -50,35 +64,36 @@ def generate_brief(
 
     contract_fields = _extract_contract_fields(contract_text)
     invoices_summary = _summarize_invoices(paths.invoices_path)
-    usage_summary = _summarize_usage(paths.usage_path, contract_fields.get("licensed_seats"))
+    licensed_seats = _get_int_field(contract_fields, "licensed_seats")
+    usage_summary = _summarize_usage(paths.usage_path, licensed_seats)
 
     request_id = str(uuid.uuid4())
 
     renewal_terms = schemas.RenewalTerms(
-        term_start=contract_fields.get("term_start"),
-        term_end=contract_fields.get("term_end"),
-        notice_window_days=contract_fields.get("notice_window_days"),
-        auto_renew=contract_fields.get("auto_renew"),
+        term_start=_get_date_field(contract_fields, "term_start"),
+        term_end=_get_date_field(contract_fields, "term_end"),
+        notice_window_days=_get_int_field(contract_fields, "notice_window_days"),
+        auto_renew=_get_bool_field(contract_fields, "auto_renew"),
         citations=_citations(contract_doc, span="TERM"),
     )
 
     pricing = schemas.Pricing(
-        annual_spend_usd=invoices_summary.get("annual_spend_usd"),
-        uplift_clause_pct=contract_fields.get("uplift_pct"),
+        annual_spend_usd=invoices_summary.annual_spend_usd,
+        uplift_clause_pct=_get_float_field(contract_fields, "uplift_pct"),
         citations=_citations(invoices_doc, span="PRICING"),
     )
 
     usage = schemas.UsageInsights(
-        allocated_seats=usage_summary.get("allocated_seats"),
-        active_seats=usage_summary.get("active_seats"),
-        delta_percent=usage_summary.get("delta_percent"),
+        allocated_seats=usage_summary.allocated_seats,
+        active_seats=usage_summary.active_seats,
+        delta_percent=usage_summary.delta_percent,
         citations=_citations(usage_doc, span="USAGE"),
     )
 
     risk_flags = schemas.RiskFlags(
-        auto_renew_soon=_auto_renew_risk(contract_fields.get("notice_window_days")),
-        liability_cap_multiple=contract_fields.get("liability_cap_multiple"),
-        dpa_status=contract_fields.get("dpa_status"),
+        auto_renew_soon=_auto_renew_risk(_get_int_field(contract_fields, "notice_window_days")),
+        liability_cap_multiple=_get_float_field(contract_fields, "liability_cap_multiple"),
+        dpa_status=_get_str_field(contract_fields, "dpa_status"),
         pii_risk="low",
         citations=_citations(contract_doc, span="RISK"),
     )
@@ -139,8 +154,8 @@ def _read_text(path: Optional[Path]) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-def _extract_contract_fields(text: str) -> Dict[str, Optional[float | int | bool | date]]:
-    result: Dict[str, Optional[float | int | bool | date]] = {}
+def _extract_contract_fields(text: str) -> ContractFields:
+    result: ContractFields = {}
     term_match = re.search(r"effective\s+([\w\s,]+?)\s+(?:through|to)\s+([\w\s,]+?)\.", text, re.IGNORECASE)
     if term_match:
         result["term_start"] = _parse_date(term_match.group(1).strip())
@@ -184,29 +199,35 @@ def _parse_date(value: str) -> Optional[date]:
     return None
 
 
-def _summarize_invoices(path: Optional[Path]) -> Dict[str, Optional[float]]:
+def _summarize_invoices(path: Optional[Path]) -> SpendSummary:
     if not path or not path.exists():
-        return {"annual_spend_usd": None}
+        return SpendSummary(annual_spend_usd=None, avg_seats=None)
     with path.open("r", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     if not rows:
-        return {"annual_spend_usd": None}
+        return SpendSummary(annual_spend_usd=None, avg_seats=None)
     total = sum(float(row.get("amount_usd", 0) or 0) for row in rows)
     seats = [float(row.get("seats", 0) or 0) for row in rows if row.get("seats")]
     avg_seats = mean(seats) if seats else None
-    return {"annual_spend_usd": total, "avg_seats": avg_seats}
+    return SpendSummary(annual_spend_usd=total, avg_seats=avg_seats)
 
 
-def _summarize_usage(path: Optional[Path], fallback_allocated: Optional[int]) -> Dict[str, Optional[float]]:
+def _summarize_usage(path: Optional[Path], fallback_allocated: Optional[int]) -> UsageSummary:
     if not path or not path.exists():
-        if fallback_allocated is None:
-            return {"allocated_seats": None, "active_seats": None, "delta_percent": None}
-        return {"allocated_seats": fallback_allocated, "active_seats": None, "delta_percent": None}
+        return UsageSummary(
+            allocated_seats=fallback_allocated,
+            active_seats=None,
+            delta_percent=None,
+        )
 
     with path.open("r", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     if not rows:
-        return {"allocated_seats": fallback_allocated, "active_seats": None, "delta_percent": None}
+        return UsageSummary(
+            allocated_seats=fallback_allocated,
+            active_seats=None,
+            delta_percent=None,
+        )
 
     last = rows[-1]
     allocated = float(last.get("allocated_seats", fallback_allocated or 0) or 0)
@@ -214,11 +235,15 @@ def _summarize_usage(path: Optional[Path], fallback_allocated: Optional[int]) ->
     delta_percent = None
     if allocated:
         delta_percent = round(((active - allocated) / allocated) * 100, 2)
-    return {
-        "allocated_seats": int(allocated) if allocated else fallback_allocated,
-        "active_seats": int(active) if active else None,
-        "delta_percent": delta_percent,
-    }
+
+    allocated_int = int(allocated) if allocated else fallback_allocated
+    active_int = int(active) if active else None
+
+    return UsageSummary(
+        allocated_seats=allocated_int,
+        active_seats=active_int,
+        delta_percent=delta_percent,
+    )
 
 
 def _auto_renew_risk(notice_window_days: Optional[int]) -> bool:
@@ -228,11 +253,11 @@ def _auto_renew_risk(notice_window_days: Optional[int]) -> bool:
 
 
 def _build_negotiation_plan(
-    contract_fields: Dict[str, Optional[float | int | bool | date]],
-    usage_summary: Dict[str, Optional[float]],
+    contract_fields: ContractFields,
+    usage_summary: UsageSummary,
     doc_id: str,
 ) -> schemas.NegotiationPlan:
-    delta = usage_summary.get("delta_percent") or 0
+    delta = usage_summary.delta_percent or 0
     target_discount = 10 if delta < -10 else 5
     walkaway = target_discount + 5
     levers = ["Usage below contracted seats" if delta < 0 else "Usage steady"]
@@ -250,11 +275,11 @@ def _build_negotiation_plan(
 
 def _draft_email(
     vendor_id: str,
-    usage_summary: Dict[str, Optional[float]],
-    invoices_summary: Dict[str, Optional[float]],
+    usage_summary: UsageSummary,
+    invoices_summary: SpendSummary,
 ) -> schemas.DraftEmail:
-    delta = usage_summary.get("delta_percent") or 0
-    spend = invoices_summary.get("annual_spend_usd") or 0
+    delta = usage_summary.delta_percent or 0
+    spend = invoices_summary.annual_spend_usd or 0
     subject = f"{vendor_id} renewal discussion"
     body = (
         f"Hi {vendor_id.title()} team,\n\n"
@@ -277,3 +302,34 @@ def _estimate_tokens(*texts: Optional[str]) -> float:
             continue
         total += max(1, len(text.split()))
     return total
+
+
+def _get_date_field(fields: ContractFields, key: str) -> Optional[date]:
+    value = fields.get(key)
+    return value if isinstance(value, date) else None
+
+
+def _get_int_field(fields: ContractFields, key: str) -> Optional[int]:
+    value = fields.get(key)
+    if isinstance(value, bool):
+        return None
+    return int(value) if isinstance(value, int) else None
+
+
+def _get_bool_field(fields: ContractFields, key: str) -> Optional[bool]:
+    value = fields.get(key)
+    return value if isinstance(value, bool) else None
+
+
+def _get_float_field(fields: ContractFields, key: str) -> Optional[float]:
+    value = fields.get(key)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _get_str_field(fields: ContractFields, key: str) -> Optional[str]:
+    value = fields.get(key)
+    return value if isinstance(value, str) else None
