@@ -50,4 +50,3 @@ class RequestTimer:
     def observe(self) -> None:
         duration = time.perf_counter() - self.start
         REQUEST_LATENCY.labels(path=self.path, method=self.method).observe(duration)
-*** End Patch

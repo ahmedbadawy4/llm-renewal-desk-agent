@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, List
+from typing import List
 
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 80) -> List[str]:

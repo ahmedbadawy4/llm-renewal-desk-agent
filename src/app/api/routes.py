@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi import status
 from pydantic import BaseModel
@@ -24,7 +26,7 @@ async def ingest(
     invoices: UploadFile | None = File(default=None),
     usage: UploadFile | None = File(default=None),
     settings: Settings = Depends(get_settings),
-) -> dict[str, str]:
+) -> Dict[str, Any]:
     if not any([contract, invoices, usage]):
         raise HTTPException(status_code=400, detail="Provide at least one file to ingest")
 
