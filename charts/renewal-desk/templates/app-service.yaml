@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.app.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "renewal-desk.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - port: {{ .Values.app.service.port }}
+      targetPort: 8000
+      {{- if eq .Values.app.service.type "NodePort" }}
+      nodePort: {{ .Values.app.service.nodePort }}
+      {{- end }}

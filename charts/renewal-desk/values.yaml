@@ -1,0 +1,41 @@
+image:
+  repository: renewal-desk
+  tag: local
+  pullPolicy: IfNotPresent
+
+app:
+  replicas: 1
+  service:
+    type: NodePort
+    port: 8000
+    nodePort: 30080
+
+grafana:
+  enabled: true
+  service:
+    type: NodePort
+    port: 3000
+    nodePort: 30030
+
+prometheus:
+  enabled: true
+  service:
+    port: 9090
+
+postgres:
+  enabled: true
+  service:
+    port: 5432
+
+minio:
+  enabled: true
+  service:
+    port: 9000
+    consolePort: 9001
+
+otel:
+  enabled: true
+  service:
+    port: 4318
+
+dataDir: /data

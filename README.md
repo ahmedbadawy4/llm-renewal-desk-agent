@@ -1,74 +1,118 @@
 # Renewal Desk Agent
 
-Production-grade LLM decision-support agent for SaaS vendor renewals. It ingests contracts, invoices, and usage exports, runs hybrid retrieval + tool-gated reasoning, and produces a renewal brief with citations, risk flags, negotiation plan, and draft outreach. The repo is structured so anyone can clone it, run the API, hit `/renewal-brief`, open dashboards, and execute evals in under 10 minutes.
+Production-grade LLM decision-support agent for SaaS vendor renewals. It ingests contracts, invoices, and usage exports, runs retrieval + tool-gated reasoning, and returns a renewal brief with citations, risk flags, negotiation plan, and draft outreach.
 
-## Features
-- **RAG + tools**: Hybrid search (pgvector + full-text) routes questions to contracts, invoices, or usage tables, while the agent accesses a tightly controlled tool layer (`get_contract_text`, `get_spend_summary`, etc.).
-- **Structured outcomes**: Every response conforms to strict Pydantic schemas (renewal terms, pricing, negotiation plan, draft email) and every field must cite evidence `(doc_id, page, span)` or fall back to `unknown`.
-- **Guardrails first**: Tool gateway with allowlist + RBAC + schema validation, retrieval sanitization against prompt injection, citation validator, PII redaction toggle, and hard budgets on tool calls, tokens, and wall clock time.
-- **Observability built in**: OpenTelemetry traces cover ingest → retrieval → agent → validators. Grafana dashboards track latency, token spend, tool-call counts, citation coverage, and "unknown" rate. Structured logs capture prompt/config versions for audits.
-- **Cost + latency controls**: Deterministic cache keyed by `(vendor_id, doc_hashes, prompt_version)`, routing small models for extraction and large models only for synthesis, and strict top-k retrieval per source.
-- **Evaluation + CI/CD**: Golden cases with regression harness, prompt-injection suite, secret scanning, lint/type/test, container builds, and eval smoke tests enforced in CI.
+## 90-second demo (Helm + Make)
+Requires a local Kubernetes cluster (Docker Desktop, minikube, or kind) and Helm.
+1. **Boot the stack**
+   ```bash
+   make helm-install
+   ```
+2. **Ingest the sample data**
+   ```bash
+   make helm-ingest-sample
+   ```
+3. **Generate a renewal brief**
+   ```bash
+   make helm-renewal-brief
+   ```
+4. **Open Grafana** at http://localhost:30030 to see latency/token/tool metrics.
 
-## Quickstart
+If your cluster does not expose NodePorts on localhost, use port-forward:
+```bash
+make helm-port-forward
+```
+Generate traffic to populate dashboards:
+```bash
+make helm-traffic REQUESTS=10 SLEEP=1
+```
+
+![Grafana Renewal Desk dashboard](docs/assets/grafana-chart.png)
+
+## What you get
+- **RAG + tools**: Hybrid search (pgvector + full-text) routes questions to contracts, invoices, or usage tables with a gated tool layer.
+- **Structured outcomes**: Pydantic schemas with evidence `(doc_id, page, span)` or `unknown`.
+- **Guardrails**: Allowlist + RBAC, retrieval sanitization, citation validator, PII redaction, hard budgets.
+- **Observability**: OTel traces + Prometheus metrics + Grafana dashboards.
+- **Eval-ready**: Golden cases, injection suite, CI smoke evals.
+
+## Portfolio note (AI Systems Engineer)
+This repo is built as a production-style AI systems portfolio piece. It emphasizes dependable ingest flows, retrieval/tool orchestration, strict schema validation, and observable deployments. The goal is to demonstrate end-to-end system engineering: infrastructure-as-code, runtime guardrails, cost/latency controls, and metrics-driven operations.
+
+## How it works (high level)
+- Ingests vendor contract/invoice/usage files into a local object store and updates a per-vendor manifest.
+- Serves a FastAPI endpoint (`/renewal-brief`) that runs retrieval + tool-gated reasoning to generate a structured renewal brief.
+- Exposes Prometheus metrics on `/metrics` for request rate, latency, agent status, and token usage.
+
+## What happens on traffic
+- Each POST increments request counters and adds latency samples.
+- Agent counters (status) and token counters increase per run.
+- Prometheus scrapes metrics every 15s; Grafana charts update shortly after.
+
+## Grafana dashboard (panels)
+- **Request rate (req/s)**: total API call volume over time.
+- **Latency p95 (s)**: tail latency for API responses.
+- **Error rate (5xx %)**: server error percentage.
+- **Agent requests by status**: success vs failure count rate.
+- **Token usage (per sec)**: in/out token counters.
+- **Request rate by path**: which endpoints are being hit.
+
+## Quickstart (local dev)
 1. **Install dependencies**
    ```bash
    pipx install poetry  # optional
    make install
    ```
-2. **Launch local stack** (FastAPI app + Postgres + MinIO + Grafana + OpenTelemetry collector):
-   ```bash
-   make docker-up
-   ```
-3. **Load samples** (copies `examples/*` into `.data/vendor_123` + manifest)
-   ```bash
-   make ingest-sample
-   ```
-4. **Call the API**
+2. **Run API locally**
    ```bash
    make run-api  # or uvicorn src.app.main:app
-   ./examples/curl/renewal_brief.sh vendor_123
    ```
-5. **Open Grafana**
-   - http://localhost:3000 → `Renewal Desk` dashboard for latency/tokens/tool metrics.
-   - Prometheus scrapes `http://localhost:8000/metrics`; `curl localhost:8000/metrics` to inspect raw counters/histograms.
-6. **Run evaluations**
+3. **Run evals**
    ```bash
    make eval
    ```
-7. **Shut everything down**
+4. **Shut everything down**
    ```bash
    make docker-down
    ```
 
-## Architecture
+## Helm (Kubernetes)
+```bash
+make helm-install  # builds a local image and installs the chart
+```
+For kind, pass `KIND_CLUSTER=your-cluster` so the image is loaded into the node.
+Access URLs:
+```bash
+make helm-urls
+```
+If the dashboard does not auto-provision, restart Grafana:
+```bash
+make helm-restart-grafana
+```
+
+## Cleanup
+```bash
+make helm-uninstall
+docker compose -f infra/docker-compose.yml down -v
+rm -rf .data
+```
+
+## Architecture (short)
 - `src/app` holds the FastAPI service, agent runner, tool gateway, RAG components, and storage adapters.
-- `docs/architecture.md` explains the C4-ish view (ingestion, knowledge layer, agent API, observability) and where budgets + validation trigger.
-- `docs/data-flow.md` walks through ingest → parse → store → retrieval routing → agent planning → validation.
-- Infra pieces (`infra/docker-compose.yml`, Grafana provisioning, Terraform stubs) keep the stack reproducible locally and easy to map to AWS.
-- `/debug/trace/{request_id}` (coming soon) reconstructs retrieval hits, tool calls, budgets, and validator outcomes for any response.
-- `docs/local-development.md` describes running the stack on Minikube, including building/pushing images locally.
+- `docs/architecture.md` and `docs/data-flow.md` explain ingestion, retrieval routing, validation, and observability.
+- `infra/` contains docker-compose, Grafana provisioning, Prometheus, and OTel collector config.
 
-## Safety & Guardrails
-- Retrieved text treated as hostile; sanitization strips instructions before prompts.
-- Tool gateway enforces RBAC + schema validation + default deny.
-- Schema validators enforce "no claim without evidence"; missing citations force `unknown` with a recorded search trail.
-- Configurable PII redaction before LLM calls; logs capture metadata, not raw sensitive content.
-- Prompt + retrieval policy versions are immutable artifacts tracked alongside code.
-- Automated adversarial suites (prompt injection, tool misuse, data exfil) run via `make eval` and in CI.
-
-## Evaluation
-- `eval/golden/cases.jsonl` + `expected.jsonl`: canonical cases covering notice windows, pricing, usage deltas, and risk flags.
-- `eval/injection_suite.jsonl`: hostile payloads injected into documents or tool outputs; validator must block or flag.
-- `eval/harness.py`: loads golden cases, runs the API (real or mocked), checks field accuracy, citation coverage, unknown rate, and injection resilience.
-- CI runs `python eval/harness.py --smoke` plus lint/type/tests; per-branch eval numbers stored for regression tracking.
+## Docs
+- `docs/local-development.md`: Docker + Minikube notes
+- `docs/runbook.md`: Demo + incident procedures
+- `docs/threat-model.md`: Security posture and risks
+- `docs/architecture.md`: C4-ish view
+- `docs/data-flow.md`: End-to-end flow
 
 ## Roadmap
-- [ ] Implement actual document parsing (pdfminer/pymupdf) + table extraction.
-- [ ] Build pgvector migrations + hybrid retrieval queries.
-- [ ] Finish agent loop with multi-model routing and `/debug/trace/{request_id}` endpoint.
-- [ ] Expand evaluator with cost/latency budgets + tolerance bands.
-- [ ] Add Terraform modules for AWS ECS + RDS + OpenSearch deployment.
-- [ ] Ship a thin React or Next.js UI + Slack slash command.
-
-This repo is intentionally opinionated: it optimizes for demonstrable operability (guardrails, evals, dashboards, IaC) over feature sprawl. Clone it, run the scripts, and start filling in the TODOs with real integrations.
+- [ ] Implement document parsing (pdfminer/pymupdf) + table extraction
+- [ ] Build pgvector migrations + hybrid retrieval queries
+- [ ] Finish agent loop with multi-model routing and `/debug/trace/{request_id}`
+- [ ] Expand evaluator with cost/latency budgets + tolerance bands
+- [ ] Add Terraform modules for AWS ECS + RDS + OpenSearch
+- [ ] Ship a thin React/Next.js UI + Slack slash command
