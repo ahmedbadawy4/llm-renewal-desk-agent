@@ -97,6 +97,55 @@ body {
   box-shadow: 0 12px 24px rgba(36, 27, 19, 0.08);
 }
 
+.collapsible {
+  padding: 0;
+}
+
+.panel-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 26px;
+}
+
+.panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-summary .panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--stroke);
+  color: var(--ink);
+  font-size: 1.2rem;
+  background: #fff;
+}
+
+.collapsible[open] .panel-toggle::before {
+  content: "−";
+}
+
+.collapsible:not([open]) .panel-toggle::before {
+  content: "+";
+}
+
+.collapsible > :not(summary) {
+  padding: 0 26px 26px;
+}
+
 .panel-header h2 {
   margin: 0;
   font-size: 1.4rem;
@@ -185,6 +234,14 @@ button.ghost:hover {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 16px;
+}
+
+.output > * {
+  min-width: 0;
+}
+
+pre {
+  max-width: 100%;
 }
 
 .trace {

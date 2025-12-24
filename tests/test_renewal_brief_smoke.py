@@ -20,7 +20,7 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
                 "pricing": {
                     "annual_spend_usd": 120000.0,
                     "uplift_clause_pct": 5.0,
-                    "citations": [{"doc_id": "invoices", "page": None, "span": "PRICING"}],
+                    "citations": [],
                 },
                 "usage": {
                     "allocated_seats": 500,
@@ -60,6 +60,13 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
     payload = resp.json()
     response = schemas.RenewalBriefResponse.model_validate(payload)
     brief = response.brief
+    assert brief.renewal_terms.citations
+    assert brief.usage.citations
+    assert brief.risk_flags.citations
+    assert brief.negotiation_plan.citations
+    assert brief.pricing.annual_spend_usd is None
+    assert brief.pricing.uplift_clause_pct is None
+    assert brief.pricing.citations == []
     citations = sum(
         len(section.citations)
         for section in [

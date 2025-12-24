@@ -68,7 +68,7 @@ make helm-traffic REQUESTS=10 SLEEP=1
 - **Architecture**: FastAPI service with retrieval → extraction → LLM synthesis (Ollama) → schema validation → response build, plus a local object store and sample data fallback.
 - **Guardrails**: Prompt injection scan, strict Pydantic validation, citation enforcement with post-repair, fail-closed unknowns when evidence is missing.
 - **Observability**: OTel spans for retrieval/LLM/validation/response build, Prometheus metrics for latency, tokens, LLM errors, validation failures, and citation coverage; Grafana dashboards included.
-- **Cost controls**: Daily budget gate (USD, approximate), request timeout, and output token caps with graceful degradation to heuristic synthesis if limits are hit.
+- **Cost controls**: In-memory daily budget tracking (approx), request timeout, and output token caps with timeouts/token caps + fallback paths (e.g., heuristic email draft).
 - **Demo steps**: Run Ollama → start stack → ingest sample files → call `/renewal-brief` → inspect Grafana + `/debug/trace/{request_id}`.
 - **Roadmap**: Real PDF parsing + hybrid retrieval, model routing (local vs hosted), and richer eval harness with regression thresholds.
 
@@ -168,7 +168,7 @@ Set these environment variables for the local demo path (Compose/Helm already wi
 - **End-to-end ownership**: Ingestion, retrieval, agent loop, and infra paths in one repo.
 - **Guardrails**: Schema validation, prompt-injection checks, tool gating, and traceability.
 - **Observability**: OTel traces, Prometheus metrics, Grafana dashboards, and debug traces.
-- **Cost control**: Token counters, budgets, and eval harness for regression checks.
+- **Cost control**: Token counters, in-memory budget tracking, and eval harness for regression checks.
 - **Deployment readiness**: Docker Compose and Helm paths with repeatable scripts.
 - **Evaluation rigor**: Golden cases and smoke evals to keep outputs bounded.
 
