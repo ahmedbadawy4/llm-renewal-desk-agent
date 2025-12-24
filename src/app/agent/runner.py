@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
 import uuid
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from .safety import contains_prompt_injection
 from ..core import debug as core_debug
 from ..core import metrics as core_metrics
 from ..core.config import Settings
+from ..llm import ollama
 from ..storage import object_store
 
 DATE_FORMATS = ("%b %d %Y", "%B %d %Y", "%b %d, %Y", "%Y-%m-%d")
@@ -110,7 +112,7 @@ def generate_brief(
     )
 
     negotiation_plan = _build_negotiation_plan(contract_fields, usage_summary, contract_doc)
-    draft_email = _draft_email(vendor_id, usage_summary, invoices_summary)
+    draft_email, draft_source = _draft_email(vendor_id, usage_summary, invoices_summary, settings)
 
     brief = schemas.RenewalBrief(
         vendor_id=vendor_id,
@@ -139,7 +141,7 @@ def generate_brief(
                 "summarize_invoices",
                 "summarize_usage",
                 "build_negotiation_plan",
-                "draft_email",
+                "draft_email_llm" if draft_source == "ollama" else "draft_email",
             ],
             "tokens": {"in": tokens_in, "out": tokens_out, "total": tokens_in + tokens_out},
             "cost_usd_estimate": None,
@@ -325,6 +327,19 @@ def _draft_email(
     vendor_id: str,
     usage_summary: UsageSummary,
     invoices_summary: SpendSummary,
+    settings: Settings,
+) -> tuple[schemas.DraftEmail, str]:
+    if settings.llm_provider.strip().lower() == "ollama":
+        llm_email = _draft_email_with_ollama(vendor_id, usage_summary, invoices_summary, settings)
+        if llm_email:
+            return llm_email, "ollama"
+    return _draft_email_fallback(vendor_id, usage_summary, invoices_summary), "heuristic"
+
+
+def _draft_email_fallback(
+    vendor_id: str,
+    usage_summary: UsageSummary,
+    invoices_summary: SpendSummary,
 ) -> schemas.DraftEmail:
     delta = usage_summary.delta_percent or 0
     spend = invoices_summary.annual_spend_usd or 0
@@ -337,6 +352,44 @@ def _draft_email(
         "Let us know a good time to connect in the next week.\n\nThanks,\nRenewal Desk"
     )
     return schemas.DraftEmail(subject=subject, body=body)
+
+
+def _draft_email_with_ollama(
+    vendor_id: str,
+    usage_summary: UsageSummary,
+    invoices_summary: SpendSummary,
+    settings: Settings,
+) -> Optional[schemas.DraftEmail]:
+    delta = usage_summary.delta_percent or 0
+    spend = invoices_summary.annual_spend_usd or 0
+    direction = "below" if delta < 0 else "above"
+    prompt = (
+        "Write a concise renewal outreach email. Return JSON with keys "
+        '`{"subject": "...", "body": "..."}` only.\n\n'
+        f"Vendor: {vendor_id}\n"
+        f"Annual spend: ${spend:,.0f}\n"
+        f"Usage delta vs contracted seats: {abs(delta):.1f}% {direction}\n"
+        "Tone: professional, collaborative, and action-oriented."
+    )
+    payload = {
+        "model": settings.ollama_model,
+        "messages": [
+            {"role": "system", "content": "You are a renewal desk assistant."},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+    }
+    try:
+        response = ollama.chat_completion(settings.ollama_base_url, payload)
+        content = response.get("message", {}).get("content", "")
+        data = json.loads(content)
+        subject = data.get("subject")
+        body = data.get("body")
+        if not subject or not body:
+            return None
+        return schemas.DraftEmail(subject=subject, body=body)
+    except Exception:
+        return None
 
 
 def _citations(doc_id: str, span: Optional[str] = None) -> list[schemas.Citation]:

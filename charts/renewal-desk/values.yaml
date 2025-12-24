@@ -9,6 +9,12 @@ app:
     type: NodePort
     port: 8000
     nodePort: 30080
+  corsOrigins:
+    - http://localhost:30081
+    - http://127.0.0.1:30081
+  llmProvider: mock
+  ollamaBaseUrl: http://host.docker.internal:11434
+  ollamaModel: llama3.1:8b
 
 grafana:
   enabled: true
@@ -39,3 +45,42 @@ otel:
     port: 4318
 
 dataDir: /data
+
+ui:
+  enabled: true
+  image:
+    repository: nginx
+    tag: 1.27-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 80
+    nodePort: 30081
+  apiBaseUrl: http://localhost:30080
+
+ollama:
+  enabled: false
+  image:
+    repository: ollama/ollama
+    tag: latest
+    pullPolicy: IfNotPresent
+  servicePort: 11434
+  prePullModels:
+    - llama3.1:8b
+  persistence:
+    enabled: true
+    size: 7Gi
+    storageClass: ""
+    existingClaim: ""
+    mountPath: /root/.ollama
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "2"
+      memory: 8Gi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

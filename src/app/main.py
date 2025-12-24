@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import router
 from .core import config, metrics
@@ -19,6 +20,12 @@ app = FastAPI(
     description="Decision-support agent for SaaS renewals (RAG + guardrails)",
 )
 app.add_middleware(MetricsMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health", tags=["system"])

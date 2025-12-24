@@ -1,0 +1,18 @@
+{{- if and .Values.ollama.enabled .Values.ollama.persistence.enabled (not .Values.ollama.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-ollama
+  labels:
+    app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.ollama.persistence.size }}
+  {{- if .Values.ollama.persistence.storageClass }}
+  storageClassName: "{{ .Values.ollama.persistence.storageClass }}"
+  {{- end }}
+{{- end }}

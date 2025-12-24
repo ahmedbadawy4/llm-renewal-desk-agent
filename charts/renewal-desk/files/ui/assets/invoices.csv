@@ -1,0 +1,5 @@
+invoice_id,vendor_id,period_start,period_end,amount_usd,seats
+INV-001,vendor_123,2024-01-01,2024-03-31,30000,410
+INV-002,vendor_123,2024-04-01,2024-06-30,30000,420
+INV-003,vendor_123,2024-07-01,2024-09-30,30000,430
+INV-004,vendor_123,2024-10-01,2024-12-31,30000,440
