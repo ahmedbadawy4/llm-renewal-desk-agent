@@ -187,6 +187,18 @@ button.ghost:hover {
   gap: 16px;
 }
 
+.trace {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .output-title {
   margin: 0 0 8px;
   font-size: 0.9rem;

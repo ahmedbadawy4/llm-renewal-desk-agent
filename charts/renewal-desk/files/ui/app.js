@@ -11,6 +11,9 @@ const ingestBtn = document.getElementById("ingestBtn");
 const briefBtn = document.getElementById("briefBtn");
 const output = document.getElementById("briefOutput");
 const requestId = document.getElementById("requestId");
+const traceBtn = document.getElementById("traceBtn");
+const traceOutput = document.getElementById("traceOutput");
+const traceRequestIdInput = document.getElementById("traceRequestId");
 const refreshToggle = document.getElementById("refreshToggle");
 const loadSamples = document.getElementById("loadSamples");
 const checkHealth = document.getElementById("checkHealth");
@@ -184,11 +187,37 @@ async function generateBrief() {
 
     output.textContent = JSON.stringify(payload, null, 2);
     requestId.textContent = payload.request_id || "Unknown";
+    if (payload.request_id) {
+      traceRequestIdInput.value = payload.request_id;
+    }
   } catch (error) {
     output.textContent = `Error: ${error.message}`;
   } finally {
     briefBtn.disabled = false;
     briefBtn.textContent = "Generate brief";
+  }
+}
+
+async function fetchTrace() {
+  const traceId = traceRequestIdInput.value.trim() || requestId.textContent;
+  if (!traceId || traceId === "None yet") {
+    traceOutput.textContent = "No request ID available.";
+    return;
+  }
+  traceBtn.disabled = true;
+  traceBtn.textContent = "Loading...";
+  try {
+    const response = await fetch(`${apiBase()}/debug/trace/${encodeURIComponent(traceId)}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail || "Trace not found");
+    }
+    traceOutput.textContent = JSON.stringify(payload, null, 2);
+  } catch (error) {
+    traceOutput.textContent = `Error: ${error.message}`;
+  } finally {
+    traceBtn.disabled = false;
+    traceBtn.textContent = "Fetch trace";
   }
 }
 
@@ -199,6 +228,7 @@ loadSamples.addEventListener("click", loadSampleFiles);
 checkHealth.addEventListener("click", checkApiHealth);
 ingestBtn.addEventListener("click", ingestFiles);
 briefBtn.addEventListener("click", generateBrief);
+traceBtn.addEventListener("click", fetchTrace);
 
 if (runtimeConfig.API_BASE_URL) {
   apiBaseInput.value = runtimeConfig.API_BASE_URL;

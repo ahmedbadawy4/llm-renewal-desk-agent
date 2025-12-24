@@ -77,6 +77,16 @@ Example (Docker Compose):
 curl -sS "http://localhost:8000/debug/trace/<request_id>" | python -m json.tool
 ```
 
+## API extras
+- **Demo brief**: `/demo/renewal-brief` generates a brief from bundled sample files (no ingest needed).
+  ```bash
+  curl -sS "http://localhost:8000/demo/renewal-brief?vendor_id=vendor_123" | python -m json.tool
+  ```
+- **LLM health**: `/llm/health` checks Ollama connectivity and model availability (when enabled).
+  ```bash
+  curl -sS "http://localhost:8000/llm/health" | python -m json.tool
+  ```
+
 ## Sample output (redacted)
 Example `POST /renewal-brief` response (truncated, citations included):
 ```json
@@ -180,7 +190,9 @@ A lightweight UI lives in `ui/` and runs as a separate static server.
    python -m http.server 5173 -d ui
    ```
 3. **Open the UI** at http://localhost:5173 and use the bundled sample files.
-The UI includes an AI backend selector (mock or Ollama) per request.
+The UI includes an AI backend selector (mock or Ollama) per request and a debug trace viewer.
+
+![Renewal Desk UI sample](docs/assets/ui-sample.png)
 
 ## Helm (Kubernetes)
 ```bash
@@ -197,6 +209,14 @@ Ollama (included by default in Helm):
 - To point at an existing Ollama service instead:
 ```bash
 make helm-install-ollama-external OLLAMA_BASE_URL=http://<ollama-host>:11434
+```
+Ingress (optional, API + UI on separate hostnames):
+```bash
+helm upgrade --install renewal-desk charts/renewal-desk \
+  --set ingress.enabled=true \
+  --set ingress.className=nginx \
+  --set ingress.hosts[0].host=renewal-desk.local \
+  --set ingress.hosts[1].host=renewal-desk-api.local
 ```
 Debug trace (Helm/NodePort):
 ```bash

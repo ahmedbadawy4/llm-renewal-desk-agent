@@ -46,6 +46,25 @@ otel:
 
 dataDir: /data
 
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: renewal-desk.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: ui
+          port: 80
+    - host: renewal-desk-api.local
+      paths:
+        - path: /
+          pathType: Prefix
+          service: app
+          port: 8000
+  tls: []
+
 ui:
   enabled: true
   image:
