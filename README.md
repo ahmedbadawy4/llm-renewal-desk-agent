@@ -10,6 +10,11 @@ Option A: **Docker Compose (fastest)**
    ```bash
    make docker-up
    ```
+   Ensure Ollama is running locally and the model is pulled:
+   ```bash
+   ollama serve
+   ollama pull llama3.1:8b
+   ```
 2. **Ingest the sample data**
    ```bash
    make ingest-sample
@@ -57,9 +62,19 @@ make helm-traffic REQUESTS=10 SLEEP=1
 - **Observability**: OTel traces + Prometheus metrics + Grafana dashboards + live debug traces.
 - **Eval-ready**: Golden cases, injection suite, CI smoke evals.
 
+## Case Study (1 page)
+- **Problem**: Renewal ops teams need a fast, defensible brief that ties contract terms, spend, and usage into a negotiation plan with auditable evidence.
+- **Constraints**: Stable API (`/ingest`, `/renewal-brief`), strict schema outputs, citation coverage, low operational overhead, and clear demo path on a laptop.
+- **Architecture**: FastAPI service with retrieval → extraction → LLM synthesis (Ollama) → schema validation → response build, plus a local object store and sample data fallback.
+- **Guardrails**: Prompt injection scan, strict Pydantic validation, citation enforcement with post-repair, fail-closed unknowns when evidence is missing.
+- **Observability**: OTel spans for retrieval/LLM/validation/response build, Prometheus metrics for latency, tokens, LLM errors, validation failures, and citation coverage; Grafana dashboards included.
+- **Cost controls**: In-memory daily budget tracking (approx), request timeout, and output token caps with timeouts/token caps + fallback paths (e.g., heuristic email draft).
+- **Demo steps**: Run Ollama → start stack → ingest sample files → call `/renewal-brief` → inspect Grafana + `/debug/trace/{request_id}`.
+- **Roadmap**: Real PDF parsing + hybrid retrieval, model routing (local vs hosted), and richer eval harness with regression thresholds.
+
 ## Current implementation status
-- Implemented: API endpoints, helm demo, metrics/traces, debug trace endpoint, eval harness skeleton
-- Stubbed/Mocked: actual PDF parsing, true hybrid retrieval queries, real model calls
+- Implemented: API endpoints, Ollama-backed synthesis with strict schema+citation validation, metrics/traces, debug trace endpoint, eval harness skeleton
+- Simplified: PDF parsing, hybrid retrieval, and extraction heuristics
 - Not yet: multi-model routing, AWS Terraform
 
 ## Portfolio note (AI Systems Engineer)
@@ -91,54 +106,69 @@ curl -sS "http://localhost:8000/debug/trace/<request_id>" | python -m json.tool
 Example `POST /renewal-brief` response (truncated, citations included):
 ```json
 {
-  "vendor_id": "vendor_123",
-  "renewal_date": "2025-01-31",
-  "estimated_annual_value_usd": 240000,
-  "risks": [
-    {
-      "type": "auto_renewal",
-      "severity": "high",
-      "citations": [
-        {
-          "doc_id": "contract_redacted.pdf",
-          "page": 12,
-          "span_start": 4021,
-          "span_end": 4092,
-          "excerpt": "Auto-renews for twelve (12) months unless terminated 60 days prior."
-        }
-      ]
+  "status": "ok",
+  "request_id": "0b4f0c0b-acde-4c11-9bdb-2f0f4e9497db",
+  "brief": {
+    "vendor_id": "vendor_123",
+    "request_id": "0b4f0c0b-acde-4c11-9bdb-2f0f4e9497db",
+    "renewal_terms": {
+      "term_start": "2024-02-01",
+      "term_end": "2025-02-01",
+      "notice_window_days": 60,
+      "auto_renew": true,
+      "citations": [{"doc_id": "contract.pdf", "page": 2, "span": "TERM"}]
+    },
+    "pricing": {
+      "annual_spend_usd": 120000,
+      "uplift_clause_pct": 5,
+      "citations": [{"doc_id": "invoices.csv", "page": 1, "span": "PRICING"}]
+    },
+    "usage": {
+      "allocated_seats": 500,
+      "active_seats": 420,
+      "delta_percent": -16,
+      "citations": [{"doc_id": "usage.csv", "page": 1, "span": "USAGE"}]
+    },
+    "risk_flags": {
+      "auto_renew_soon": true,
+      "liability_cap_multiple": 2,
+      "dpa_status": "present",
+      "pii_risk": "low",
+      "citations": [{"doc_id": "contract.pdf", "page": 2, "span": "RISK"}]
+    },
+    "negotiation_plan": {
+      "target_discount_pct": 10,
+      "walkaway_delta_pct": 15,
+      "levers": ["Usage below contracted seats"],
+      "citations": [{"doc_id": "contract.pdf", "page": 2, "span": "NEGOTIATION"}]
+    },
+    "draft_email": {
+      "subject": "Vendor_123 renewal discussion",
+      "body": "Hi Vendor_123 team, ..."
     }
-  ],
-  "recommended_actions": [
-    {
-      "action": "Request a 15% price reduction tied to usage decline",
-      "citations": [
-        {
-          "doc_id": "usage_redacted.csv",
-          "page": 1,
-          "span_start": 188,
-          "span_end": 232,
-          "excerpt": "2024-05 active seats: 82 (down from 100 in 2023-05)"
-        }
-      ]
-    }
-  ],
-  "unknowns": [
-    "Overage pricing policy (pricing appendix missing)"
-  ]
+  }
 }
 ```
 
 ## Supported LLM providers
-- Mock mode only by default (real model calls are optional).
-- Optional: Ollama via `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL`.
-- Intended support: OpenAI-compatible API endpoints once wiring is enabled.
+- Default: Ollama via `LLM_PROVIDER=ollama`, `LLM_BASE_URL`, and `LLM_MODEL` (local-first).
+- Mock mode for tests or offline runs with `LLM_PROVIDER=mock`.
+- Intended: OpenAI-compatible API endpoints once wiring is enabled.
+
+## Demo mode configuration
+Set these environment variables for the local demo path (Compose/Helm already wires defaults):
+- `LLM_PROVIDER=ollama`
+- `LLM_BASE_URL=http://host.docker.internal:11434`
+- `LLM_MODEL=llama3.1:8b`
+- `MAX_OUTPUT_TOKENS=800`
+- `REQUEST_TIMEOUT_S=30`
+- `DAILY_BUDGET_USD=1.0` (approximate budget gate)
 
 ## How this maps to the role
 - **End-to-end ownership**: Ingestion, retrieval, agent loop, and infra paths in one repo.
 - **Guardrails**: Schema validation, prompt-injection checks, tool gating, and traceability.
 - **Observability**: OTel traces, Prometheus metrics, Grafana dashboards, and debug traces.
-- **Cost control**: Token counters, budgets, and eval harness for regression checks.
+- **Cost control**: Token counters, in-memory budget tracking, and eval harness for regression checks.
 - **Deployment readiness**: Docker Compose and Helm paths with repeatable scripts.
 - **Evaluation rigor**: Golden cases and smoke evals to keep outputs bounded.
 
@@ -159,6 +189,9 @@ Example `POST /renewal-brief` response (truncated, citations included):
 - **Agent requests by status**: success vs failure count rate.
 - **Token usage (per sec)**: in/out token counters.
 - **Request rate by path**: which endpoints are being hit.
+- **LLM errors**: LLM call failures, schema issues, or budget overruns.
+- **Validation failures**: schema or citation validation drops.
+- **Citation coverage ratio**: percent of sections with citations.
 
 ## Quickstart (local dev)
 1. **Install dependencies**

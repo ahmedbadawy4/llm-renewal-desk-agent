@@ -9,6 +9,12 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/renewaldesk
       OBJECT_STORE_BUCKET: renewal-desk
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LLM_PROVIDER: ollama
+      LLM_BASE_URL: http://host.docker.internal:11434
+      LLM_MODEL: llama3.1:8b
+      MAX_OUTPUT_TOKENS: 800
+      REQUEST_TIMEOUT_S: 30
+      DAILY_BUDGET_USD: 1.0
     ports:
       - "8000:8000"
     depends_on:

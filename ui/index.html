@@ -30,11 +30,14 @@
         </div>
       </header>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Connect to the API</h2>
-          <p>Point the UI at a running Renewal Desk API.</p>
-        </div>
+      <details class="panel collapsible">
+        <summary class="panel-summary">
+          <div class="panel-header">
+            <h2>Connect to the API</h2>
+            <p>Point the UI at a running Renewal Desk API.</p>
+          </div>
+          <span class="panel-toggle" aria-hidden="true"></span>
+        </summary>
         <label class="field">
           <span>API base URL</span>
           <input id="apiBase" type="url" value="http://localhost:8000" />
@@ -57,7 +60,7 @@
             <input id="ollamaModel" type="text" placeholder="llama3.1:8b" />
           </label>
         </div>
-      </section>
+      </details>
 
       <section class="panel">
         <div class="panel-header">
@@ -85,11 +88,14 @@
         <p class="hint" id="fileStatus">No files selected yet.</p>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>Generate a renewal brief</h2>
-          <p>Kick off the agent and inspect the brief payload.</p>
-        </div>
+      <details class="panel collapsible">
+        <summary class="panel-summary">
+          <div class="panel-header">
+            <h2>Generate a renewal brief</h2>
+            <p>Kick off the agent and inspect the brief payload.</p>
+          </div>
+          <span class="panel-toggle" aria-hidden="true"></span>
+        </summary>
         <div class="actions">
           <label class="toggle">
             <input id="refreshToggle" type="checkbox" />
@@ -118,7 +124,7 @@
           </label>
           <pre id="traceOutput">No trace yet.</pre>
         </div>
-      </section>
+      </details>
     </main>
 
     <script src="config.js"></script>

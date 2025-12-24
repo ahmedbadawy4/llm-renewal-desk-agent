@@ -47,10 +47,16 @@ spec:
               value: {{ .Values.app.corsOrigins | toJson | quote }}
             - name: LLM_PROVIDER
               value: {{ $llmProvider | quote }}
-            - name: OLLAMA_BASE_URL
+            - name: LLM_BASE_URL
               value: {{ $ollamaUrl | quote }}
-            - name: OLLAMA_MODEL
+            - name: LLM_MODEL
               value: {{ .Values.app.ollamaModel | quote }}
+            - name: MAX_OUTPUT_TOKENS
+              value: {{ .Values.app.maxOutputTokens | quote }}
+            - name: REQUEST_TIMEOUT_S
+              value: {{ .Values.app.requestTimeoutS | quote }}
+            - name: DAILY_BUDGET_USD
+              value: {{ .Values.app.dailyBudgetUsd | quote }}
           volumeMounts:
             - name: data
               mountPath: {{ .Values.dataDir }}

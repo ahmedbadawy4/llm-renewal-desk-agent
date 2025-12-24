@@ -3,16 +3,20 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Citation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     doc_id: str
     page: Optional[int] = None
     span: Optional[str] = None
 
 
 class RenewalTerms(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     term_start: Optional[date] = None
     term_end: Optional[date] = None
     notice_window_days: Optional[int] = None
@@ -21,12 +25,16 @@ class RenewalTerms(BaseModel):
 
 
 class Pricing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     annual_spend_usd: Optional[float] = None
     uplift_clause_pct: Optional[float] = None
     citations: List[Citation] = Field(default_factory=list)
 
 
 class UsageInsights(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     allocated_seats: Optional[int] = None
     active_seats: Optional[int] = None
     delta_percent: Optional[float] = None
@@ -34,7 +42,9 @@ class UsageInsights(BaseModel):
 
 
 class RiskFlags(BaseModel):
-    auto_renew_soon: bool = False
+    model_config = ConfigDict(extra="forbid")
+
+    auto_renew_soon: Optional[bool] = None
     liability_cap_multiple: Optional[float] = None
     dpa_status: Optional[str] = None
     pii_risk: Optional[str] = None
@@ -42,6 +52,8 @@ class RiskFlags(BaseModel):
 
 
 class NegotiationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_discount_pct: Optional[float] = None
     walkaway_delta_pct: Optional[float] = None
     levers: List[str] = Field(default_factory=list)
@@ -49,11 +61,15 @@ class NegotiationPlan(BaseModel):
 
 
 class DraftEmail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     subject: str
     body: str
 
 
 class RenewalBrief(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     vendor_id: str
     request_id: str
     renewal_terms: RenewalTerms
@@ -65,6 +81,18 @@ class RenewalBrief(BaseModel):
 
 
 class RenewalBriefResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: str
     request_id: str
     brief: RenewalBrief
+
+
+class RenewalBriefSynthesis(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    renewal_terms: RenewalTerms
+    pricing: Pricing
+    usage: UsageInsights
+    risk_flags: RiskFlags
+    negotiation_plan: NegotiationPlan

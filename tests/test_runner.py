@@ -8,7 +8,7 @@ from src.app.core.config import Settings
 
 
 def test_generate_brief_from_examples():
-    settings = Settings()
+    settings = Settings(llm_provider="mock")
     inputs = runner.InputPaths(
         contract_path=Path("examples/sample_contract.pdf"),
         invoices_path=Path("examples/invoices.csv"),
@@ -23,7 +23,7 @@ def test_generate_brief_from_examples():
 
 
 def test_generate_brief_injection_detected():
-    settings = Settings()
+    settings = Settings(llm_provider="mock")
     inputs = runner.InputPaths(contract_path=Path("tests/fixtures/injection_contract.txt"))
 
     with pytest.raises(InjectionDetectedError):

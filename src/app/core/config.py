@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
 
@@ -12,12 +12,21 @@ class Settings(BaseSettings):
     data_dir: str = Field(default=".data")
     examples_dir: str = Field(default="examples")
     prompt_version: str = Field(default="v0")
-    max_tool_calls: int = 8
-    max_tokens: int = 6000
+    max_tool_calls: int = Field(default=8, validation_alias="MAX_TOOL_CALLS")
+    max_tokens: int = Field(default=6000, validation_alias="MAX_TOKENS")
+    max_output_tokens: int = Field(default=800, validation_alias="MAX_OUTPUT_TOKENS")
+    request_timeout_s: float = Field(default=30.0, validation_alias="REQUEST_TIMEOUT_S")
+    daily_budget_usd: float = Field(default=1.0, validation_alias="DAILY_BUDGET_USD")
     commit_sha: str = Field(default="dev")
-    llm_provider: str = Field(default="mock")
-    ollama_base_url: str = Field(default="http://host.docker.internal:11434")
-    ollama_model: str = Field(default="llama3.1:8b")
+    llm_provider: str = Field(default="ollama", validation_alias="LLM_PROVIDER")
+    ollama_base_url: str = Field(
+        default="http://host.docker.internal:11434",
+        validation_alias=AliasChoices("LLM_BASE_URL", "OLLAMA_BASE_URL"),
+    )
+    ollama_model: str = Field(
+        default="llama3.1:8b",
+        validation_alias=AliasChoices("LLM_MODEL", "OLLAMA_MODEL"),
+    )
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
