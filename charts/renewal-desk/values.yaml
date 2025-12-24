@@ -12,9 +12,12 @@ app:
   corsOrigins:
     - http://localhost:30081
     - http://127.0.0.1:30081
-  llmProvider: mock
+  llmProvider: ollama
   ollamaBaseUrl: http://host.docker.internal:11434
   ollamaModel: llama3.1:8b
+  maxOutputTokens: 800
+  requestTimeoutS: 30
+  dailyBudgetUsd: 1.0
 
 grafana:
   enabled: true

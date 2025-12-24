@@ -4,7 +4,7 @@
   "title": "Renewal Desk",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "10s",
   "time": {
     "from": "now-15m",
@@ -84,6 +84,55 @@
         }
       ],
       "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "LLM errors (per sec)",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_errors_total[5m])) by (reason)",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8}
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Validation failures (per sec)",
+      "targets": [
+        {
+          "expr": "sum(rate(validation_failures_total[5m])) by (stage)",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8}
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Citation coverage ratio",
+      "targets": [
+        {
+          "expr": "avg_over_time(citation_coverage_ratio[5m])",
+          "legendFormat": "coverage"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "LLM token usage (per sec)",
+      "targets": [
+        {
+          "expr": "sum(rate(llm_tokens_total[5m])) by (direction)",
+          "legendFormat": "{{direction}}"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8}
     }
   ]
 }
