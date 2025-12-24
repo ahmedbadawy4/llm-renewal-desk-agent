@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from ..agent import runner
 from ..agent.exceptions import InjectionDetectedError
 from ..agent.schemas import RenewalBriefResponse
+from ..core import debug as core_debug
 from ..core.config import Settings, get_settings
 from ..storage import object_store
 
@@ -65,3 +66,11 @@ async def renewal_brief(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RenewalBriefResponse(status="ok", request_id=brief.request_id, brief=brief)
+
+
+@router.get("/debug/trace/{request_id}", tags=["debug"])
+async def debug_trace(request_id: str) -> Dict[str, Any]:
+    trace = core_debug.get_trace(request_id)
+    if not trace:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return trace

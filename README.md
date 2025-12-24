@@ -30,14 +30,27 @@ make helm-traffic REQUESTS=10 SLEEP=1
 ![Grafana Renewal Desk dashboard](docs/assets/grafana-chart.png)
 
 ## What you get
-- **RAG + tools**: Hybrid search (pgvector + full-text) routes questions to contracts, invoices, or usage tables with a gated tool layer.
-- **Structured outcomes**: Pydantic schemas with evidence `(doc_id, page, span)` or `unknown`.
-- **Guardrails**: Allowlist + RBAC, retrieval sanitization, citation validator, PII redaction, hard budgets.
-- **Observability**: OTel traces + Prometheus metrics + Grafana dashboards.
+- **Agent design**: LLM-style loop with retrieval + tool orchestration for real workflows.
+- **Integration**: Clear API surface (`/ingest`, `/renewal-brief`) built for embedding into products and internal systems.
+- **Guardrails**: Prompt injection detection, schema validation, and RBAC-style tool gating.
+- **Reliability**: Budgets, validation outcomes, and error-rate monitoring as production signals.
+- **Observability**: OTel traces + Prometheus metrics + Grafana dashboards + live debug traces.
 - **Eval-ready**: Golden cases, injection suite, CI smoke evals.
 
 ## Portfolio note (AI Systems Engineer)
 This repo is built as a production-style AI systems portfolio piece. It emphasizes dependable ingest flows, retrieval/tool orchestration, strict schema validation, and observable deployments. The goal is to demonstrate end-to-end system engineering: infrastructure-as-code, runtime guardrails, cost/latency controls, and metrics-driven operations.
+
+## Debuggability proof
+Minimal trace endpoint is live at `/debug/trace/{request_id}` (in-memory, last 200) and returns:
+- retrieved doc IDs
+- tool calls invoked
+- token counters (in/out/total)
+- validation outcomes
+
+Example:
+```bash
+curl -sS "http://localhost:30080/debug/trace/<request_id>" | python -m json.tool
+```
 
 ## How it works (high level)
 - Ingests vendor contract/invoice/usage files into a local object store and updates a per-vendor manifest.
@@ -112,7 +125,7 @@ rm -rf .data
 ## Roadmap
 - [ ] Implement document parsing (pdfminer/pymupdf) + table extraction
 - [ ] Build pgvector migrations + hybrid retrieval queries
-- [ ] Finish agent loop with multi-model routing and `/debug/trace/{request_id}`
+- [ ] Finish agent loop with multi-model routing
 - [ ] Expand evaluator with cost/latency budgets + tolerance bands
 - [ ] Add Terraform modules for AWS ECS + RDS + OpenSearch
 - [ ] Ship a thin React/Next.js UI + Slack slash command
