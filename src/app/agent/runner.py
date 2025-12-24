@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 from . import schemas
 from .exceptions import InjectionDetectedError
 from .safety import contains_prompt_injection
+from ..core import debug as core_debug
 from ..core import metrics as core_metrics
 from ..core.config import Settings
 from ..storage import object_store
@@ -54,20 +55,30 @@ def generate_brief(
     if not contract_text:
         raise RuntimeError("Missing contract text; ingest files before requesting a brief")
 
-    if contains_prompt_injection(contract_text):
-        core_metrics.record_agent_completion("injection_detected")
-        raise InjectionDetectedError()
-
+    request_id = str(uuid.uuid4())
     contract_doc = str(paths.contract_path) if paths.contract_path else "contract"
     invoices_doc = str(paths.invoices_path) if paths.invoices_path else "invoices"
     usage_doc = str(paths.usage_path) if paths.usage_path else "usage"
+
+    if contains_prompt_injection(contract_text):
+        core_metrics.record_agent_completion("injection_detected")
+        core_debug.record_trace(
+            request_id,
+            {
+                "vendor_id": vendor_id,
+                "retrieved_doc_ids": [contract_doc, invoices_doc, usage_doc],
+                "tool_calls": [],
+                "tokens": {"in": 0, "out": 0, "total": 0},
+                "cost_usd_estimate": None,
+                "validation": {"prompt_injection": "blocked"},
+            },
+        )
+        raise InjectionDetectedError()
 
     contract_fields = _extract_contract_fields(contract_text)
     invoices_summary = _summarize_invoices(paths.invoices_path)
     licensed_seats = _get_int_field(contract_fields, "licensed_seats")
     usage_summary = _summarize_usage(paths.usage_path, licensed_seats)
-
-    request_id = str(uuid.uuid4())
 
     renewal_terms = schemas.RenewalTerms(
         term_start=_get_date_field(contract_fields, "term_start"),
@@ -112,11 +123,48 @@ def generate_brief(
         draft_email=draft_email,
     )
 
+    tokens_in = _estimate_tokens(contract_text, invoices_text, usage_text)
+    tokens_out = _estimate_tokens(brief.model_dump_json())
     core_metrics.record_agent_completion("success")
-    core_metrics.record_token_usage("in", _estimate_tokens(contract_text, invoices_text, usage_text))
-    core_metrics.record_token_usage("out", _estimate_tokens(brief.model_dump_json()))
+    core_metrics.record_token_usage("in", tokens_in)
+    core_metrics.record_token_usage("out", tokens_out)
+
+    core_debug.record_trace(
+        request_id,
+        {
+            "vendor_id": vendor_id,
+            "retrieved_doc_ids": [contract_doc, invoices_doc, usage_doc],
+            "tool_calls": [
+                "extract_contract_fields",
+                "summarize_invoices",
+                "summarize_usage",
+                "build_negotiation_plan",
+                "draft_email",
+            ],
+            "tokens": {"in": tokens_in, "out": tokens_out, "total": tokens_in + tokens_out},
+            "cost_usd_estimate": None,
+            "validation": _validation_snapshot(brief, injection_status="not_detected"),
+        },
+    )
 
     return brief
+
+
+def _validation_snapshot(brief: schemas.RenewalBrief, injection_status: str) -> Dict[str, Any]:
+    sections = {
+        "renewal_terms": brief.renewal_terms.citations,
+        "pricing": brief.pricing.citations,
+        "usage": brief.usage.citations,
+        "risk_flags": brief.risk_flags.citations,
+        "negotiation_plan": brief.negotiation_plan.citations,
+    }
+    coverage = sum(1 for citations in sections.values() if citations) / len(sections)
+    return {
+        "citation_coverage": round(coverage, 2),
+        "sections_with_citations": [name for name, cites in sections.items() if cites],
+        "sections_missing_citations": [name for name, cites in sections.items() if not cites],
+        "prompt_injection": injection_status,
+    }
 
 
 def _resolve_inputs(vendor_id: str, settings: Settings) -> InputPaths:
