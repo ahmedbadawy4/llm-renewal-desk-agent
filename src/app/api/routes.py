@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -11,6 +12,7 @@ from ..agent.exceptions import InjectionDetectedError
 from ..agent.schemas import RenewalBriefResponse
 from ..core import debug as core_debug
 from ..core.config import Settings, get_settings
+from ..llm import ollama as ollama_client
 from ..storage import object_store
 
 router = APIRouter()
@@ -80,6 +82,48 @@ async def renewal_brief(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RenewalBriefResponse(status="ok", request_id=brief.request_id, brief=brief)
+
+
+@router.get("/demo/renewal-brief", response_model=RenewalBriefResponse, tags=["demo"])
+async def demo_renewal_brief(
+    vendor_id: str = "vendor_123",
+    refresh: bool = False,
+    settings: Settings = Depends(get_settings),
+) -> RenewalBriefResponse:
+    examples = Path(settings.examples_dir)
+    contract = examples / "sample_contract.pdf"
+    invoices = examples / "invoices.csv"
+    usage = examples / "usage.csv"
+    if not contract.exists() or not invoices.exists() or not usage.exists():
+        raise HTTPException(status_code=404, detail="Sample files not found")
+    inputs = runner.InputPaths(contract_path=contract, invoices_path=invoices, usage_path=usage)
+    try:
+        brief = runner.generate_brief(vendor_id=vendor_id, refresh=refresh, settings=settings, inputs=inputs)
+    except InjectionDetectedError as exc:
+        raise HTTPException(status_code=400, detail=f"Prompt injection detected: {exc}") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RenewalBriefResponse(status="ok", request_id=brief.request_id, brief=brief)
+
+
+@router.get("/llm/health", tags=["system"])
+async def llm_health(settings: Settings = Depends(get_settings)) -> Dict[str, Any]:
+    provider = settings.llm_provider.strip().lower()
+    if provider != "ollama":
+        return {"status": "skipped", "provider": provider}
+    try:
+        data = ollama_client.list_models(settings.ollama_base_url)
+        model_names = [entry.get("name", "") for entry in data.get("models", []) if entry.get("name")]
+        has_model = settings.ollama_model in model_names
+        return {
+            "status": "ok" if has_model else "missing_model",
+            "provider": provider,
+            "model": settings.ollama_model,
+            "model_count": len(model_names),
+            "sample_models": model_names[:5],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Ollama unreachable: {exc}") from exc
 
 
 @router.get("/debug/trace/{request_id}", tags=["debug"])

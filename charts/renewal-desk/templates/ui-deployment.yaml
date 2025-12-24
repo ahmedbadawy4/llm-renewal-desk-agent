@@ -18,6 +18,8 @@ spec:
         app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ui
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: ui
+      annotations:
+        checksum/ui-config: {{ include (print $.Template.BasePath "/ui-configmap.yaml") . | sha256sum }}
     spec:
       containers:
         - name: ui

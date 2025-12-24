@@ -23,6 +23,8 @@ spec:
       labels:
         app.kubernetes.io/name: {{ include "renewal-desk.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        checksum/app-values: {{ toJson .Values.app | sha256sum }}
     spec:
       containers:
         - name: app
