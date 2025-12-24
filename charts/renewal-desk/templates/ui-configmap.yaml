@@ -1,0 +1,41 @@
+{{- if .Values.ui.enabled }}
+{{- $ollamaUrl := .Values.app.ollamaBaseUrl }}
+{{- if .Values.ollama.enabled }}
+{{- $ollamaUrl = printf "http://%s-ollama:%v" (include "renewal-desk.fullname" .) .Values.ollama.servicePort }}
+{{- end }}
+{{- $llmProvider := .Values.app.llmProvider }}
+{{- if .Values.ollama.enabled }}
+{{- $llmProvider = "ollama" }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-ui
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+binaryData:
+  sample_contract.pdf: {{ .Files.Get "files/ui/assets/sample_contract.pdf" | b64enc | quote }}
+data:
+  index.html: |-
+{{ .Files.Get "files/ui/index.html" | indent 4 }}
+  styles.css: |-
+{{ .Files.Get "files/ui/styles.css" | indent 4 }}
+  app.js: |-
+{{ .Files.Get "files/ui/app.js" | indent 4 }}
+  config.js: |-
+    window.RUNTIME_CONFIG = {
+      API_BASE_URL: "{{ .Values.ui.apiBaseUrl }}",
+      DEFAULT_LLM_PROVIDER: "{{ $llmProvider }}",
+      LLM_OPTIONS: [
+        { value: "mock", label: "Mock (heuristic)" },
+        { value: "ollama", label: "Ollama" },
+      ],
+      OLLAMA_BASE_URL: "{{ $ollamaUrl }}",
+      OLLAMA_MODEL: "{{ .Values.app.ollamaModel }}",
+    };
+  invoices.csv: |-
+{{ .Files.Get "files/ui/assets/invoices.csv" | indent 4 }}
+  usage.csv: |-
+{{ .Files.Get "files/ui/assets/usage.csv" | indent 4 }}
+{{- end }}

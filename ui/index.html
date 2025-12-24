@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Renewal Desk UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Space+Grotesk:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Renewal Desk Agent</p>
+          <h1>Renewals, clarified.</h1>
+          <p class="subhead">
+            Upload your renewal documents, ingest them, and generate a
+            decision-ready brief with citations.
+          </p>
+        </div>
+        <div class="status-card" id="statusCard">
+          <p class="status-title">API status</p>
+          <p class="status-value" id="apiStatus">Not checked</p>
+          <button class="ghost" id="checkHealth">Check health</button>
+        </div>
+      </header>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Connect to the API</h2>
+          <p>Point the UI at a running Renewal Desk API.</p>
+        </div>
+        <label class="field">
+          <span>API base URL</span>
+          <input id="apiBase" type="url" value="http://localhost:8000" />
+        </label>
+        <label class="field">
+          <span>Vendor ID</span>
+          <input id="vendorId" type="text" value="vendor_123" />
+        </label>
+        <label class="field">
+          <span>AI backend</span>
+          <select id="llmProvider"></select>
+        </label>
+        <div class="grid">
+          <label class="field">
+            <span>Ollama base URL (optional)</span>
+            <input id="ollamaBaseUrl" type="url" placeholder="http://localhost:11434" />
+          </label>
+          <label class="field">
+            <span>Ollama model (optional)</span>
+            <input id="ollamaModel" type="text" placeholder="llama3.1:8b" />
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Upload documents</h2>
+          <p>Contract PDF + invoices + usage exports.</p>
+        </div>
+        <div class="grid">
+          <label class="field">
+            <span>Contract (PDF)</span>
+            <input id="contractFile" type="file" accept="application/pdf" />
+          </label>
+          <label class="field">
+            <span>Invoices (CSV)</span>
+            <input id="invoicesFile" type="file" accept="text/csv" />
+          </label>
+          <label class="field">
+            <span>Usage (CSV)</span>
+            <input id="usageFile" type="file" accept="text/csv" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="loadSamples" class="ghost">Use bundled sample files</button>
+          <button id="ingestBtn">Upload &amp; ingest</button>
+        </div>
+        <p class="hint" id="fileStatus">No files selected yet.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Generate a renewal brief</h2>
+          <p>Kick off the agent and inspect the brief payload.</p>
+        </div>
+        <div class="actions">
+          <label class="toggle">
+            <input id="refreshToggle" type="checkbox" />
+            <span>Force refresh</span>
+          </label>
+          <button id="briefBtn">Generate brief</button>
+        </div>
+        <div class="output">
+          <div>
+            <p class="output-title">Response</p>
+            <pre id="briefOutput">Waiting for a request...</pre>
+          </div>
+          <div>
+            <p class="output-title">Last request ID</p>
+            <p id="requestId" class="pill">None yet</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

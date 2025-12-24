@@ -10,7 +10,7 @@ IMAGE_TAG ?= local
 KIND_CLUSTER ?=
 
 .PHONY: install run-api lint type test format docker-up docker-down eval ingest-sample migrate
-.PHONY: helm-install helm-uninstall helm-ingest-sample
+.PHONY: helm-install helm-install-ollama-external helm-uninstall helm-ingest-sample
 .PHONY: helm-urls helm-port-forward helm-renewal-brief helm-traffic helm-restart-grafana
 
 install:
@@ -65,7 +65,21 @@ helm-install:
 		--namespace $(HELM_NAMESPACE) --create-namespace \
 		--set image.repository=$(IMAGE_REPO) \
 		--set image.tag=$(IMAGE_TAG) \
-		--set image.pullPolicy=IfNotPresent
+		--set image.pullPolicy=IfNotPresent \
+		--set ollama.enabled=true
+
+helm-install-ollama-external:
+	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
+	@if [ -n "$(KIND_CLUSTER)" ]; then \
+		kind load docker-image $(IMAGE_REPO):$(IMAGE_TAG) --name $(KIND_CLUSTER); \
+	fi
+	$(HELM) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
+		--namespace $(HELM_NAMESPACE) --create-namespace \
+		--set image.repository=$(IMAGE_REPO) \
+		--set image.tag=$(IMAGE_TAG) \
+		--set image.pullPolicy=IfNotPresent \
+		--set app.llmProvider=ollama \
+		--set app.ollamaBaseUrl=$(OLLAMA_BASE_URL)
 
 helm-uninstall:
 	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
@@ -76,6 +90,7 @@ helm-ingest-sample:
 helm-urls:
 	@echo "API: $(HELM_API_BASE)"
 	@echo "Grafana: $(HELM_GRAFANA_URL)"
+	@echo "UI: $(HELM_UI_URL)"
 
 helm-port-forward:
 	@echo "Starting port-forward for API (8000)."
@@ -101,6 +116,8 @@ helm-restart-grafana:
 	$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deploy/$(HELM_RELEASE)-grafana
 HELM_API_BASE ?= http://localhost:30080
 HELM_GRAFANA_URL ?= http://localhost:30030
+HELM_UI_URL ?= http://localhost:30081
+OLLAMA_BASE_URL ?= http://host.docker.internal:11434
 VENDOR_ID ?= vendor_123
 REQUESTS ?= 1000
 SLEEP ?= 0.01

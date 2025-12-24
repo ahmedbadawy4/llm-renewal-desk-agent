@@ -120,7 +120,8 @@ Example `POST /renewal-brief` response (truncated, citations included):
 ```
 
 ## Supported LLM providers
-- Mock mode only (real model calls are currently stubbed).
+- Mock mode only by default (real model calls are optional).
+- Optional: Ollama via `LLM_PROVIDER=ollama` and `OLLAMA_BASE_URL`.
 - Intended support: OpenAI-compatible API endpoints once wiring is enabled.
 
 ## How this maps to the role
@@ -168,14 +169,34 @@ Example `POST /renewal-brief` response (truncated, citations included):
    make docker-down
    ```
 
+## Simple UI (separate, static)
+A lightweight UI lives in `ui/` and runs as a separate static server.
+1. **Run the API**
+   ```bash
+   make run-api
+   ```
+2. **Serve the UI**
+   ```bash
+   python -m http.server 5173 -d ui
+   ```
+3. **Open the UI** at http://localhost:5173 and use the bundled sample files.
+The UI includes an AI backend selector (mock or Ollama) per request.
+
 ## Helm (Kubernetes)
 ```bash
-make helm-install  # builds a local image and installs the chart
+make helm-install  # builds a local image, installs the chart, and deploys Ollama
 ```
 For kind, pass `KIND_CLUSTER=your-cluster` so the image is loaded into the node.
 Access URLs:
 ```bash
 make helm-urls
+```
+UI runs as a separate NodePort service (default http://localhost:30081). It ships with bundled sample files.
+Ollama (included by default in Helm):
+- `helm-install` deploys an in-cluster Ollama and pre-pulls models.
+- To point at an existing Ollama service instead:
+```bash
+make helm-install-ollama-external OLLAMA_BASE_URL=http://<ollama-host>:11434
 ```
 Debug trace (Helm/NodePort):
 ```bash

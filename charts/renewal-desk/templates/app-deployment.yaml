@@ -1,3 +1,11 @@
+{{- $ollamaUrl := .Values.app.ollamaBaseUrl }}
+{{- if .Values.ollama.enabled }}
+{{- $ollamaUrl = printf "http://%s-ollama:%v" (include "renewal-desk.fullname" .) .Values.ollama.servicePort }}
+{{- end }}
+{{- $llmProvider := .Values.app.llmProvider }}
+{{- if .Values.ollama.enabled }}
+{{- $llmProvider = "ollama" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +41,14 @@ spec:
               value: "http://{{ include "renewal-desk.fullname" . }}-otel:4318"
             - name: DATA_DIR
               value: "{{ .Values.dataDir }}"
+            - name: CORS_ORIGINS
+              value: {{ .Values.app.corsOrigins | toJson | quote }}
+            - name: LLM_PROVIDER
+              value: {{ $llmProvider | quote }}
+            - name: OLLAMA_BASE_URL
+              value: {{ $ollamaUrl | quote }}
+            - name: OLLAMA_MODEL
+              value: {{ .Values.app.ollamaModel | quote }}
           volumeMounts:
             - name: data
               mountPath: {{ .Values.dataDir }}

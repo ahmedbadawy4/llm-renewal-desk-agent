@@ -1,0 +1,19 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-ollama
+  labels:
+    app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.ollama.servicePort }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

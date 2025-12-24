@@ -1,0 +1,5 @@
+month,vendor_id,allocated_seats,active_seats,notes
+2024-01,vendor_123,500,405,"Adoption steady"
+2024-04,vendor_123,500,418,"Pilot for new team"
+2024-07,vendor_123,500,422,"Seasonal spike"
+2024-10,vendor_123,500,415,"Churned 2 teams"

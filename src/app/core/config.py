@@ -15,6 +15,19 @@ class Settings(BaseSettings):
     max_tool_calls: int = 8
     max_tokens: int = 6000
     commit_sha: str = Field(default="dev")
+    llm_provider: str = Field(default="mock")
+    ollama_base_url: str = Field(default="http://host.docker.internal:11434")
+    ollama_model: str = Field(default="llama3.1:8b")
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "http://localhost:30081",
+            "http://127.0.0.1:30081",
+        ]
+    )
 
     class Config:
         env_file = ".env"

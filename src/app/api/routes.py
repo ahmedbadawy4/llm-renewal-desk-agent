@@ -18,6 +18,9 @@ router = APIRouter()
 
 class RenewalBriefRequest(BaseModel):
     refresh: bool = False
+    llm_provider: str | None = None
+    ollama_base_url: str | None = None
+    ollama_model: str | None = None
 
 
 @router.post("/ingest", tags=["ingestion"], status_code=status.HTTP_202_ACCEPTED)
@@ -59,8 +62,19 @@ async def renewal_brief(
     payload: RenewalBriefRequest,
     settings: Settings = Depends(get_settings),
 ) -> RenewalBriefResponse:
+    provider = payload.llm_provider.strip().lower() if payload.llm_provider else None
+    if provider and provider not in {"mock", "ollama"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported llm_provider: {payload.llm_provider}")
+    settings_data = settings.model_dump()
+    if provider:
+        settings_data["llm_provider"] = provider
+    if payload.ollama_base_url:
+        settings_data["ollama_base_url"] = payload.ollama_base_url
+    if payload.ollama_model:
+        settings_data["ollama_model"] = payload.ollama_model
+    request_settings = Settings(**settings_data)
     try:
-        brief = runner.generate_brief(vendor_id=vendor_id, refresh=payload.refresh, settings=settings)
+        brief = runner.generate_brief(vendor_id=vendor_id, refresh=payload.refresh, settings=request_settings)
     except InjectionDetectedError as exc:
         raise HTTPException(status_code=400, detail=f"Prompt injection detected: {exc}") from exc
     except RuntimeError as exc:

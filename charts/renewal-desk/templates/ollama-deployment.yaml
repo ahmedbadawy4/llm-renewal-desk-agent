@@ -1,0 +1,75 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-ollama
+  labels:
+    app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  serviceName: {{ include "renewal-desk.fullname" . }}-ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "renewal-desk.name" . }}-ollama
+        app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Values.ollama.podAnnotations }}
+{{ toYaml .Values.ollama.podAnnotations | indent 8 }}
+{{- end }}
+    spec:
+      containers:
+        - name: ollama
+          image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
+          imagePullPolicy: {{ .Values.ollama.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.ollama.servicePort }}
+              name: http
+              protocol: TCP
+          volumeMounts:
+            - name: ollama-data
+              mountPath: {{ .Values.ollama.persistence.mountPath }}
+{{- if .Values.ollama.prePullModels }}
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - >
+                    set -e;
+                    for m in {{ join " " .Values.ollama.prePullModels }}; do
+                      echo "Pulling model $m";
+                      ollama pull "$m";
+                    done
+{{- end }}
+          resources:
+{{ toYaml .Values.ollama.resources | indent 12 }}
+      volumes:
+        - name: ollama-data
+{{- if and .Values.ollama.persistence.enabled (not .Values.ollama.persistence.existingClaim) }}
+          persistentVolumeClaim:
+            claimName: {{ include "renewal-desk.fullname" . }}-ollama
+{{- else if .Values.ollama.persistence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.ollama.persistence.existingClaim }}
+{{- else }}
+          emptyDir: {}
+{{- end }}
+{{- if kindIs "map" .Values.ollama.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.ollama.nodeSelector | indent 8 }}
+{{- end }}
+{{- if kindIs "map" .Values.ollama.affinity }}
+      affinity:
+{{ toYaml .Values.ollama.affinity | indent 8 }}
+{{- end }}
+{{- if kindIs "map" .Values.ollama.tolerations }}
+      tolerations:
+{{ toYaml .Values.ollama.tolerations | indent 8 }}
+{{- end }}
+{{- end }}
