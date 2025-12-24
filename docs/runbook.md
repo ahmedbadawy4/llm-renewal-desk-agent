@@ -3,7 +3,7 @@
 This runbook documents standard operating procedures for the Renewal Desk agent. Keep it close during demos and real incidents.
 
 ## 1. High latency / timeouts
-1. Check Grafana `Renewal Desk` dashboard → `Latency p95` panel.
+1. Check Grafana `Renewal Desk` dashboard -> `Latency p95` panel.
 2. Inspect `/debug/trace/{request_id}` for representative slow requests; look for large retrieval counts or model retries.
 3. Actions:
    - Verify caches warm (cache hit panel). If low, confirm `doc_hash` changes.

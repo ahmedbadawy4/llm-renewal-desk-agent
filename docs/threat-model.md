@@ -10,10 +10,10 @@ The Renewal Desk agent handles sensitive contracts, pricing, and PII. This model
 - Audit logs showing tool invocations + doc references
 
 ## Trust boundaries
-1. **External file sources** → ingestion pipeline (risk: malicious PDFs/executables)
-2. **Retrieved text** → LLM prompts (risk: prompt injection, data exfil)
-3. **Tool gateway** → downstream services (risk: privilege escalation, mass data access)
-4. **Logs/metrics** → observability stack (risk: PII leakage)
+1. **External file sources** -> ingestion pipeline (risk: malicious PDFs/executables)
+2. **Retrieved text** -> LLM prompts (risk: prompt injection, data exfil)
+3. **Tool gateway** -> downstream services (risk: privilege escalation, mass data access)
+4. **Logs/metrics** -> observability stack (risk: PII leakage)
 
 ## Threat scenarios & mitigations
 | Scenario | Impact | Mitigation |

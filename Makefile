@@ -78,9 +78,8 @@ helm-urls:
 	@echo "Grafana: $(HELM_GRAFANA_URL)"
 
 helm-port-forward:
-	@echo "Starting port-forward for API (8000) and Grafana (3000)."
+	@echo "Starting port-forward for API (8000)."
 	@echo "API: http://localhost:8000"
-	@echo "Grafana: http://localhost:3000"
 	@echo "Press Ctrl+C to stop."
 	$(KUBECTL) -n $(HELM_NAMESPACE) port-forward svc/$(HELM_RELEASE) 8000:8000
 

@@ -1,8 +1,28 @@
 # Renewal Desk Agent
 
+[![CI](https://github.com/ahmedbadawy4/llm-renewal-desk-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedbadawy4/llm-renewal-desk-agent/actions/workflows/ci.yml)
+
 Production-grade LLM decision-support agent for SaaS vendor renewals. It ingests contracts, invoices, and usage exports, runs retrieval + tool-gated reasoning, and returns a renewal brief with citations, risk flags, negotiation plan, and draft outreach.
 
-## 90-second demo (Helm + Make)
+## 90-second demo
+Option A: **Docker Compose (fastest)**
+1. **Boot the stack**
+   ```bash
+   make docker-up
+   ```
+2. **Ingest the sample data**
+   ```bash
+   make ingest-sample
+   ```
+3. **Generate a renewal brief**
+   ```bash
+   curl -sS -X POST "http://localhost:8000/renewal-brief?vendor_id=vendor_123" \
+     -H "Content-Type: application/json" \
+     -d '{"refresh": false}' | python -m json.tool
+   ```
+4. **Open Grafana** at http://localhost:3000 to see latency/token/tool metrics.
+
+Option B: **Helm (full stack)**
 Requires a local Kubernetes cluster (Docker Desktop, minikube, or kind) and Helm.
 1. **Boot the stack**
    ```bash
@@ -37,6 +57,11 @@ make helm-traffic REQUESTS=10 SLEEP=1
 - **Observability**: OTel traces + Prometheus metrics + Grafana dashboards + live debug traces.
 - **Eval-ready**: Golden cases, injection suite, CI smoke evals.
 
+## Current implementation status
+- Implemented: API endpoints, helm demo, metrics/traces, debug trace endpoint, eval harness skeleton
+- Stubbed/Mocked: actual PDF parsing, true hybrid retrieval queries, real model calls
+- Not yet: multi-model routing, AWS Terraform
+
 ## Portfolio note (AI Systems Engineer)
 This repo is built as a production-style AI systems portfolio piece. It emphasizes dependable ingest flows, retrieval/tool orchestration, strict schema validation, and observable deployments. The goal is to demonstrate end-to-end system engineering: infrastructure-as-code, runtime guardrails, cost/latency controls, and metrics-driven operations.
 
@@ -47,10 +72,64 @@ Minimal trace endpoint is live at `/debug/trace/{request_id}` (in-memory, last 2
 - token counters (in/out/total)
 - validation outcomes
 
-Example:
+Example (Docker Compose):
 ```bash
-curl -sS "http://localhost:30080/debug/trace/<request_id>" | python -m json.tool
+curl -sS "http://localhost:8000/debug/trace/<request_id>" | python -m json.tool
 ```
+
+## Sample output (redacted)
+Example `POST /renewal-brief` response (truncated, citations included):
+```json
+{
+  "vendor_id": "vendor_123",
+  "renewal_date": "2025-01-31",
+  "estimated_annual_value_usd": 240000,
+  "risks": [
+    {
+      "type": "auto_renewal",
+      "severity": "high",
+      "citations": [
+        {
+          "doc_id": "contract_redacted.pdf",
+          "page": 12,
+          "span_start": 4021,
+          "span_end": 4092,
+          "excerpt": "Auto-renews for twelve (12) months unless terminated 60 days prior."
+        }
+      ]
+    }
+  ],
+  "recommended_actions": [
+    {
+      "action": "Request a 15% price reduction tied to usage decline",
+      "citations": [
+        {
+          "doc_id": "usage_redacted.csv",
+          "page": 1,
+          "span_start": 188,
+          "span_end": 232,
+          "excerpt": "2024-05 active seats: 82 (down from 100 in 2023-05)"
+        }
+      ]
+    }
+  ],
+  "unknowns": [
+    "Overage pricing policy (pricing appendix missing)"
+  ]
+}
+```
+
+## Supported LLM providers
+- Mock mode only (real model calls are currently stubbed).
+- Intended support: OpenAI-compatible API endpoints once wiring is enabled.
+
+## How this maps to the role
+- **End-to-end ownership**: Ingestion, retrieval, agent loop, and infra paths in one repo.
+- **Guardrails**: Schema validation, prompt-injection checks, tool gating, and traceability.
+- **Observability**: OTel traces, Prometheus metrics, Grafana dashboards, and debug traces.
+- **Cost control**: Token counters, budgets, and eval harness for regression checks.
+- **Deployment readiness**: Docker Compose and Helm paths with repeatable scripts.
+- **Evaluation rigor**: Golden cases and smoke evals to keep outputs bounded.
 
 ## How it works (high level)
 - Ingests vendor contract/invoice/usage files into a local object store and updates a per-vendor manifest.
@@ -98,10 +177,19 @@ Access URLs:
 ```bash
 make helm-urls
 ```
+Debug trace (Helm/NodePort):
+```bash
+curl -sS "http://localhost:30080/debug/trace/<request_id>" | python -m json.tool
+```
 If the dashboard does not auto-provision, restart Grafana:
 ```bash
 make helm-restart-grafana
 ```
+
+## Troubleshooting
+- Grafana empty: generate traffic with `make helm-traffic REQUESTS=10 SLEEP=1`.
+- Cannot access NodePorts: use port-forward (API: `make helm-port-forward`, Grafana: `kubectl -n renewal-desk port-forward svc/renewal-desk-grafana 3000:3000`).
+- Reset state: `docker compose -f infra/docker-compose.yml down -v` and remove `.data`.
 
 ## Cleanup
 ```bash
