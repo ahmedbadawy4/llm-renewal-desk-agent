@@ -1,0 +1,114 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-grafana-datasources
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  annotations:
+    checksum/config: '{{ .Files.Get "files/renewal-desk.json" | sha256sum }}'
+data:
+  datasource.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "renewal-desk.fullname" . }}-prometheus:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-grafana-dashboards
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+  annotations:
+    checksum/config: '{{ .Files.Get "files/renewal-desk.json" | sha256sum }}'
+data:
+  dashboard.yml: |
+    apiVersion: 1
+    providers:
+      - name: Renewal Desk
+        orgId: 1
+        folder: Renewal Desk
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards
+  renewal-desk.json: |
+{{ .Files.Get "files/renewal-desk.json" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-grafana
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: grafana
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: grafana
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.3.1
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-files
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: datasources
+          configMap:
+            name: {{ include "renewal-desk.fullname" . }}-grafana-datasources
+        - name: dashboards
+          configMap:
+            name: {{ include "renewal-desk.fullname" . }}-grafana-dashboards
+            items:
+              - key: dashboard.yml
+                path: dashboard.yml
+        - name: dashboard-files
+          configMap:
+            name: {{ include "renewal-desk.fullname" . }}-grafana-dashboards
+            items:
+              - key: renewal-desk.json
+                path: renewal-desk.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-grafana
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  type: {{ .Values.grafana.service.type }}
+  selector:
+    app.kubernetes.io/component: grafana
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - port: {{ .Values.grafana.service.port }}
+      targetPort: 3000
+      {{- if eq .Values.grafana.service.type "NodePort" }}
+      nodePort: {{ .Values.grafana.service.nodePort }}
+      {{- end }}
+{{- end }}

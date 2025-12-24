@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "renewal-desk.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "renewal-desk.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APP_ENV
+              value: "local"
+            - name: DATABASE_URL
+              value: "postgresql://postgres:postgres@{{ include "renewal-desk.fullname" . }}-postgres:5432/renewaldesk"
+            - name: OBJECT_STORE_BUCKET
+              value: "renewal-desk"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://{{ include "renewal-desk.fullname" . }}-otel:4318"
+            - name: DATA_DIR
+              value: "{{ .Values.dataDir }}"
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.dataDir }}
+      volumes:
+        - name: data
+          emptyDir: {}
