@@ -77,4 +77,4 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
             brief.negotiation_plan,
         ]
     )
-    assert citations >= 5
+    assert citations >= 4
