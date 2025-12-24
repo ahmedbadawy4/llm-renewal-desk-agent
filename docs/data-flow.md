@@ -16,10 +16,10 @@ This document traces a renewal request from ingestion to response and highlights
 1. FastAPI endpoint authenticates caller, loads vendor context, and enforces per-tenant budget counters.
 2. Agent runner creates a plan with subgoals: terms, spend trend, usage delta, risk flags, negotiation levers, draft email.
 3. For each subgoal, router selects retrieval strategy:
-   - Terms → contract chunk search (hybrid)
-   - Spend → invoices table aggregation (deterministic) + embeddings for missing context
-   - Usage delta → usage CSV summary
-   - Risk flags → heuristics + targeted search queries
+   - Terms -> contract chunk search (hybrid)
+   - Spend -> invoices table aggregation (deterministic) + embeddings for missing context
+   - Usage delta -> usage CSV summary
+   - Risk flags -> heuristics + targeted search queries
 4. Router issues tool calls (via gateway) to fetch normalized data or text snippets. Gateway validates payloads, RBAC, and increments budget metrics.
 5. Retrieved snippets sanitized (quoted, instructions stripped) before being passed to the reasoning LLM.
 6. Reasoning LLM (larger model) receives: system policy, plan context, tool outputs, and must respond with `RenewalBrief` schema.
@@ -28,7 +28,7 @@ This document traces a renewal request from ingestion to response and highlights
 
 ## 3. Post-processing + Observability
 1. Successful responses stored with request metadata (vendor_id, prompt_version, retrieval config hash, tokens, tool counts, citations).
-2. Logs/traces flushed via OpenTelemetry to collector → Grafana Tempo/Loki.
+2. Logs/traces flushed via OpenTelemetry to collector -> Grafana Tempo/Loki.
 3. Metrics exported (Prometheus format) for latency, unknown rate, citation coverage, token spend, cache hits.
 4. `/debug/trace/{request_id}` uses stored artifacts to reconstruct the above steps for debugging.
 

@@ -6,7 +6,7 @@ Evaluation is non-negotiable: every change must prove it did not erode factual a
 - **`eval/golden/cases.jsonl`**: Input descriptors (vendor metadata, doc paths, required outputs).
 - **`eval/golden/expected.jsonl`**: Ground-truth structured responses aligned to schema.
 - Cases cover:
-  - Notice window extraction (30/45/60/90 days, missing clause → `unknown`).
+  - Notice window extraction (30/45/60/90 days, missing clause -> `unknown`).
   - Auto-renew + termination semantics.
   - Pricing uplifts and true usage vs. contracted.
   - Risk scenarios (missing DPA, liability cap mismatch).
