@@ -1,0 +1,48 @@
+groups:
+  - name: renewal_desk_alerts
+    interval: 30s
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, api_request_latency_seconds_bucket) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency detected"
+          description: "P95 latency is {{ $value }}s (threshold: 5s)"
+
+      - alert: HighErrorRate
+        expr: rate(api_requests_total{status=~"5.."}[5m]) / rate(api_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      - alert: LowCitationCoverage
+        expr: citation_coverage_ratio < 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low citation coverage"
+          description: "Citation coverage is {{ $value | humanizePercentage }} (threshold: 95%)"
+
+      - alert: LLMProviderDown
+        expr: rate(llm_errors_total{reason="request_failed"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM provider experiencing failures"
+          description: "LLM error rate is {{ $value }} errors/sec"
+
+      - alert: BudgetExceeded
+        expr: rate(llm_errors_total{reason="budget_exceeded"}[1h]) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Daily budget exceeded"
+          description: "Daily budget has been exceeded"

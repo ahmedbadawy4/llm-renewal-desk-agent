@@ -1,0 +1,105 @@
+{
+  "id": null,
+  "uid": "renewal-desk-business",
+  "title": "Renewal Desk - Business Metrics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Renewal Briefs Generated (24h)",
+      "targets": [
+        {
+          "expr": "sum(increase(renewal_briefs_generated_total[24h]))",
+          "legendFormat": "briefs"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Vendors Processed (24h)",
+      "targets": [
+        {
+          "expr": "sum(increase(vendors_processed_total[24h]))",
+          "legendFormat": "vendors"
+        }
+      ],
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Renewal Briefs Generated Over Time",
+      "targets": [
+        {
+          "expr": "sum(rate(renewal_briefs_generated_total[5m]))",
+          "legendFormat": "briefs/sec"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Citation Coverage (SLO)",
+      "targets": [
+        {
+          "expr": "slo_citation_coverage",
+          "legendFormat": "coverage"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 12, "w": 6, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 1}}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "P95 Latency (SLO)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(slo_latency_p95_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        }
+      ],
+      "gridPos": {"x": 6, "y": 12, "w": 6, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Error Rate (SLO)",
+      "targets": [
+        {
+          "expr": "slo_error_rate",
+          "legendFormat": "error_rate"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 1}}
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Top Vendors by Briefs Generated",
+      "targets": [
+        {
+          "expr": "topk(10, sum by (vendor_id) (increase(renewal_briefs_generated_total[24h])))",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 8}
+    }
+  ]
+}

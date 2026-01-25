@@ -17,6 +17,14 @@ psycopg = { version = "^3.1.18", extras = ["binary"] }
 opentelemetry-sdk = "^1.25.0"
 opentelemetry-exporter-otlp = "^1.25.0"
 prometheus-client = "^0.20.0"
+pymupdf = "^1.24.0"
+pgvector = "^0.3.0"
+sentence-transformers = "^2.3.0"
+alembic = "^1.13.0"
+sqlalchemy = "^2.0.0"
+cryptography = "^42.0.0"
+psycopg-pool = "^3.2.0"
+scipy = "^1.11.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"

@@ -25,6 +25,9 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
       annotations:
         checksum/app-values: {{ toJson .Values.app | sha256sum }}
+        {{- if .Values.app.deployTimestamp }}
+        deploy-timestamp: {{ .Values.app.deployTimestamp | quote }}
+        {{- end }}
     spec:
       containers:
         - name: app
@@ -57,9 +60,47 @@ spec:
               value: {{ .Values.app.requestTimeoutS | quote }}
             - name: DAILY_BUDGET_USD
               value: {{ .Values.app.dailyBudgetUsd | quote }}
+            {{- if .Values.app.openaiApiKey }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "renewal-desk.fullname" . }}-secrets
+                  key: openai-api-key
+            {{- end }}
+            {{- if .Values.app.openaiBaseUrl }}
+            - name: OPENAI_BASE_URL
+              value: {{ .Values.app.openaiBaseUrl | quote }}
+            {{- end }}
+            {{- if .Values.app.openaiModel }}
+            - name: OPENAI_MODEL
+              value: {{ .Values.app.openaiModel | quote }}
+            {{- end }}
+            {{- if .Values.app.encryptionKey }}
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "renewal-desk.fullname" . }}-secrets
+                  key: encryption-key
+            {{- end }}
+            - name: RATE_LIMIT_MAX_REQUESTS
+              value: {{ .Values.app.rateLimitMaxRequests | default 100 | quote }}
+            - name: RATE_LIMIT_WINDOW_SECONDS
+              value: {{ .Values.app.rateLimitWindowSeconds | default 60 | quote }}
           volumeMounts:
             - name: data
               mountPath: {{ .Values.dataDir }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
       volumes:
         - name: data
           emptyDir: {}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -17,11 +18,14 @@ from . import schemas
 from .exceptions import InjectionDetectedError
 from .safety import contains_prompt_injection
 from . import validators
+from ..core import cache as core_cache
 from ..core import debug as core_debug
 from ..core import metrics as core_metrics
 from ..core.config import Settings
 from ..llm import ollama
+from ..llm.router import ModelRouter
 from ..storage import object_store
+from ..storage import pdf_parser
 
 DATE_FORMATS = ("%b %d %Y", "%B %d %Y", "%b %d, %Y", "%Y-%m-%d")
 ContractFields = Dict[str, Any]
@@ -85,6 +89,13 @@ def generate_brief(
     settings: Settings,
     inputs: Optional[InputPaths] = None,
 ) -> schemas.RenewalBrief:
+    cache = core_cache.get_cache()
+    cache_key = cache.cache_key("brief", vendor_id, refresh)
+
+    if not refresh:
+        cached = cache.get(cache_key)
+        if cached:
+            return schemas.RenewalBrief.model_validate(cached)
     tracer = trace.get_tracer(__name__)
     with tracer.start_as_current_span("retrieval") as span:
         paths = inputs or _resolve_inputs(vendor_id, settings)
@@ -97,7 +108,25 @@ def generate_brief(
         span.set_attribute("usage_present", bool(usage_text))
 
     if not contract_text:
-        raise RuntimeError("Missing contract text; ingest files before requesting a brief")
+        from ..workers.job_queue import get_job_queue
+        job_queue = get_job_queue(settings)
+        jobs = job_queue.list_jobs(vendor_id)
+        pending_jobs = [j for j in jobs if j.status.value in ["pending", "processing"]]
+        
+        if pending_jobs:
+            job_ids = [j.job_id for j in pending_jobs]
+            raise RuntimeError(
+                f"Contract text not available yet. Async processing jobs are still running. "
+                f"Job IDs: {', '.join(job_ids[:3])}. "
+                f"Please wait for jobs to complete or check status at /jobs?vendor_id={vendor_id}"
+            )
+        elif paths.contract_path:
+            raise RuntimeError(
+                f"Missing contract text. PDF parsing may have failed for {paths.contract_path}. "
+                f"Please check job status at /jobs?vendor_id={vendor_id} or re-ingest the contract."
+            )
+        else:
+            raise RuntimeError("Missing contract text; ingest files before requesting a brief")
 
     request_id = str(uuid.uuid4())
     contract_doc = str(paths.contract_path) if paths.contract_path else "contract"
@@ -119,7 +148,7 @@ def generate_brief(
         )
         raise InjectionDetectedError()
 
-    contract_fields = _extract_contract_fields(contract_text)
+    contract_fields = _extract_contract_fields(contract_text, paths.contract_path)
     invoices_summary = _summarize_invoices(paths.invoices_path)
     licensed_seats = _get_int_field(contract_fields, "licensed_seats")
     usage_summary = _summarize_usage(paths.usage_path, licensed_seats)
@@ -207,9 +236,15 @@ def generate_brief(
         coverage_ratio = validators.citation_coverage_ratio(brief)
     core_metrics.record_citation_coverage(coverage_ratio)
 
+    cache = core_cache.get_cache()
+    cache_key = cache.cache_key("brief", vendor_id, refresh)
+    cache.set(cache_key, brief.model_dump(), ttl_seconds=3600)
+
     tokens_in = _estimate_tokens(contract_text, invoices_text, usage_text)
     tokens_out = _estimate_tokens(brief.model_dump_json())
     core_metrics.record_agent_completion("success")
+    core_metrics.record_renewal_brief_generated(vendor_id)
+    core_metrics.record_vendor_processed()
     core_metrics.record_token_usage("in", tokens_in)
     core_metrics.record_token_usage("out", tokens_out)
     if llm_stats.get("tokens_in"):
@@ -303,19 +338,14 @@ def _synthesize_brief_with_ollama(
         core_metrics.record_llm_error("budget_exceeded")
         return None, {"tokens_in": 0, "tokens_out": 0, "cost_usd_estimate": None}
 
-    payload = {
-        "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": _load_prompt_base()},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "options": {"num_predict": settings.max_output_tokens},
-    }
+    messages = [
+        {"role": "system", "content": _load_prompt_base()},
+        {"role": "user", "content": prompt},
+    ]
 
-    timer = core_metrics.LLMRequestTimer("ollama")
+    timer = core_metrics.LLMRequestTimer("llm")
     try:
-        response = _call_ollama_chat(settings, payload)
+        response = _call_llm(settings, messages, estimated_tokens=estimated_prompt_tokens, complexity="medium")
     except Exception:
         core_metrics.record_llm_error("request_failed")
         return None, {"tokens_in": 0, "tokens_out": 0, "cost_usd_estimate": None}
@@ -323,8 +353,9 @@ def _synthesize_brief_with_ollama(
         timer.observe()
 
     content = response.get("message", {}).get("content", "")
-    tokens_in = float(response.get("prompt_eval_count") or 0)
-    tokens_out = float(response.get("eval_count") or 0)
+    usage = response.get("usage", {})
+    tokens_in = float(usage.get("prompt_tokens") or usage.get("prompt_eval_count") or 0)
+    tokens_out = float(usage.get("completion_tokens") or usage.get("eval_count") or 0)
     total_tokens = tokens_in + tokens_out
     cost_estimate = _estimate_cost_usd(total_tokens or estimated_prompt_tokens)
     _BUDGET_TRACKER.record(cost_estimate, settings.daily_budget_usd)
@@ -368,18 +399,13 @@ def _repair_citations_with_ollama(
         f"Original prompt:\n{prompt}\n\n"
         f"Current JSON:\n{synthesis.model_dump_json()}"
     )
-    payload = {
-        "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": _load_prompt_base()},
-            {"role": "user", "content": repair_prompt},
-        ],
-        "stream": False,
-        "options": {"num_predict": settings.max_output_tokens},
-    }
-    timer = core_metrics.LLMRequestTimer("ollama")
+    messages = [
+        {"role": "system", "content": _load_prompt_base()},
+        {"role": "user", "content": repair_prompt},
+    ]
+    timer = core_metrics.LLMRequestTimer("llm")
     try:
-        response = _call_ollama_chat(settings, payload)
+        response = _call_llm(settings, messages, estimated_tokens=500, complexity="simple")
     except Exception:
         core_metrics.record_llm_error("repair_failed")
         return None
@@ -490,10 +516,31 @@ def _estimate_cost_usd(tokens: float) -> float:
     return round((tokens / 1000.0) * COST_PER_1K_TOKENS_USD, 6)
 
 
-def _call_ollama_chat(settings: Settings, payload: Dict[str, Any]) -> Dict[str, Any]:
-    return ollama.chat_completion(
-        settings.ollama_base_url,
-        payload,
+_router_cache: Dict[str, ModelRouter] = {}
+
+
+def _get_router(settings: Settings) -> ModelRouter:
+    cache_key = f"{settings.llm_provider}_{settings.ollama_base_url}"
+    if cache_key not in _router_cache:
+        _router_cache[cache_key] = ModelRouter(settings)
+    return _router_cache[cache_key]
+
+
+def _call_llm(
+    settings: Settings,
+    messages: list[Dict[str, str]],
+    estimated_tokens: int = 0,
+    complexity: str = "medium",
+) -> Dict[str, Any]:
+    router = _get_router(settings)
+    budget_available = settings.daily_budget_usd - _BUDGET_TRACKER._spent_usd if settings.daily_budget_usd > 0 else 1.0
+
+    return router.call(
+        messages=messages,
+        estimated_tokens=estimated_tokens,
+        complexity=complexity,
+        budget_available=budget_available,
+        quality_requirement="standard",
         timeout_seconds=settings.request_timeout_s,
     )
 
@@ -530,11 +577,39 @@ def _path_or_none(path_str: Optional[str]) -> Optional[Path]:
 def _read_text(path: Optional[Path]) -> str:
     if not path or not path.exists():
         return ""
+
+    if path.suffix.lower() == ".pdf":
+        vendor_dir = path.parent
+        base_name = path.stem
+        parsed_text_path = vendor_dir / "parsed" / f"{base_name}_text.txt"
+
+        if parsed_text_path.exists():
+            return pdf_parser.load_parsed_text(parsed_text_path)
+
+        try:
+            parse_result = pdf_parser.parse_pdf(path)
+            pdf_parser.save_parsed_data(vendor_dir, path, parse_result)
+            return parse_result.full_text
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"PDF parsing failed for {path}: {e}. Async job may still be processing.")
+            return ""
+
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-def _extract_contract_fields(text: str) -> ContractFields:
+def _extract_contract_fields(text: str, contract_path: Optional[Path] = None) -> ContractFields:
     result: ContractFields = {}
+
+    if contract_path and contract_path.suffix.lower() == ".pdf":
+        vendor_dir = contract_path.parent
+        base_name = contract_path.stem
+        parsed_tables_path = vendor_dir / "parsed" / f"{base_name}_tables.json"
+
+        if parsed_tables_path.exists():
+            tables = pdf_parser.load_parsed_tables(parsed_tables_path)
+            _extract_from_tables(tables, result)
+
     term_match = re.search(r"effective\s+([\w\s,]+?)\s+(?:through|to)\s+([\w\s,]+?)\.", text, re.IGNORECASE)
     if term_match:
         result["term_start"] = _parse_date(term_match.group(1).strip())
@@ -566,6 +641,48 @@ def _extract_contract_fields(text: str) -> ContractFields:
         result["dpa_status"] = "missing" if "separately" in text.lower() else "present"
 
     return result
+
+
+def _extract_from_tables(tables: list[pdf_parser.ExtractedTable], result: ContractFields) -> None:
+    for table in tables:
+        table_text = " ".join([" ".join(row) for row in table.data])
+        table_lower = table_text.lower()
+
+        if "price" in table_lower or "cost" in table_lower or "$" in table_text:
+            for row in table.data:
+                for cell in row:
+                    price_match = re.search(r"\$([0-9,]+)", str(cell))
+                    if price_match and "stated_price" not in result:
+                        try:
+                            result["stated_price"] = float(price_match.group(1).replace(",", ""))
+                        except ValueError:
+                            pass
+
+        if "seat" in table_lower or "license" in table_lower:
+            for row in table.data:
+                for cell in row:
+                    seats_match = re.search(r"(\d+)\s*seat", str(cell), re.IGNORECASE)
+                    if seats_match and "licensed_seats" not in result:
+                        try:
+                            result["licensed_seats"] = int(seats_match.group(1))
+                        except ValueError:
+                            pass
+
+        if "term" in table_lower or "date" in table_lower:
+            for row in table.data:
+                row_text = " ".join(str(cell) for cell in row)
+                term_match = re.search(
+                    r"effective\s+([\w\s,]+?)\s+(?:through|to)\s+([\w\s,]+?)",
+                    row_text,
+                    re.IGNORECASE,
+                )
+                if term_match:
+                    start_date = _parse_date(term_match.group(1).strip())
+                    end_date = _parse_date(term_match.group(2).strip())
+                    if start_date and "term_start" not in result:
+                        result["term_start"] = start_date
+                    if end_date and "term_end" not in result:
+                        result["term_end"] = end_date
 
 
 def _parse_date(value: str) -> Optional[date]:
@@ -700,17 +817,12 @@ def _draft_email_with_ollama(
         f"Usage delta vs contracted seats: {abs(delta):.1f}% {direction}\n"
         "Tone: professional, collaborative, and action-oriented."
     )
-    payload = {
-        "model": settings.ollama_model,
-        "messages": [
-            {"role": "system", "content": "You are a renewal desk assistant."},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "options": {"num_predict": settings.max_output_tokens},
-    }
+    messages = [
+        {"role": "system", "content": "You are a renewal desk assistant."},
+        {"role": "user", "content": prompt},
+    ]
     try:
-        response = _call_ollama_chat(settings, payload)
+        response = _call_llm(settings, messages, estimated_tokens=200, complexity="simple")
         content = response.get("message", {}).get("content", "")
         data = json.loads(content)
         subject = data.get("subject")

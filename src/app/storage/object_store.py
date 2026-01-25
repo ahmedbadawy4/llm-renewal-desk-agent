@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Dict
+
+from ..core.encryption import encrypt_data
+from . import pdf_parser
+from .indexing import index_document
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_default_dir() -> str:
@@ -26,10 +33,34 @@ def vendor_dir(vendor_id: str) -> Path:
     return path
 
 
-def store_file(vendor_id: str, filename: str, data: bytes) -> Path:
+def store_file(vendor_id: str, filename: str, data: bytes, doc_type: str | None = None, encrypt: bool = True) -> Path:
     base = vendor_dir(vendor_id)
     target = base / filename
-    target.write_bytes(data)
+
+    if encrypt and filename.lower().endswith((".txt", ".csv")):
+        try:
+            data_str = data.decode("utf-8", errors="ignore")
+            encrypted = encrypt_data(data_str)
+            target.write_text(encrypted, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Encryption failed, storing unencrypted: {e}")
+            target.write_bytes(data)
+    else:
+        target.write_bytes(data)
+
+    if filename.lower().endswith(".pdf"):
+        try:
+            parse_result = pdf_parser.parse_pdf(target)
+            pdf_parser.save_parsed_data(base, target, parse_result)
+        except Exception as e:
+            logger.warning(f"PDF parsing failed for {filename}: {e}")
+
+    if doc_type:
+        try:
+            index_document(vendor_id, filename, doc_type, target)
+        except Exception as e:
+            logger.warning(f"Document indexing failed for {filename}: {e}")
+
     return target
 
 

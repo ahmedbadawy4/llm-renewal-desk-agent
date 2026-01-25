@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Placeholder migration runner."""
+"""Database migration runner using Alembic."""
 from __future__ import annotations
 
 import sys
 
+from alembic import command
+from alembic.config import Config
+
 
 def main() -> None:
-    print("Apply database migrations here (Alembic or SQL files).")
-    print("For now, ensure pgvector extension + tables exist via manual SQL.")
-    sys.exit(0)
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+    print("Database migrations applied successfully.")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,12 @@ app:
   maxOutputTokens: 800
   requestTimeoutS: 30
   dailyBudgetUsd: 1.0
+  openaiApiKey: ""
+  openaiBaseUrl: "https://api.openai.com/v1"
+  openaiModel: "gpt-3.5-turbo"
+  encryptionKey: ""
+  rateLimitMaxRequests: 100
+  rateLimitWindowSeconds: 60
 
 grafana:
   enabled: true
@@ -33,6 +39,7 @@ prometheus:
 
 postgres:
   enabled: true
+  replicas: 1
   service:
     port: 5432
 

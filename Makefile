@@ -57,16 +57,24 @@ docker-down:
 	$(DOCKER_COMPOSE) down
 
 helm-install:
-	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
-	@if [ -n "$(KIND_CLUSTER)" ]; then \
+	@TIMESTAMP=$$(date +%s); \
+	echo "Building image with tag: $(IMAGE_TAG)"; \
+	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .; \
+	if [ -n "$(KIND_CLUSTER)" ]; then \
 		kind load docker-image $(IMAGE_REPO):$(IMAGE_TAG) --name $(KIND_CLUSTER); \
-	fi
+	fi; \
+	echo "Upgrading Helm release with timestamp annotation to force rollout..."; \
 	$(HELM) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
 		--namespace $(HELM_NAMESPACE) --create-namespace \
 		--set image.repository=$(IMAGE_REPO) \
 		--set image.tag=$(IMAGE_TAG) \
 		--set image.pullPolicy=IfNotPresent \
-		--set ollama.enabled=true
+		--set ollama.enabled=true \
+		--set-string app.deployTimestamp=$$TIMESTAMP; \
+	echo "Forcing rollout restart to use new image..."; \
+	$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE); \
+	echo "Waiting for rollout to complete..."; \
+	$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE) --timeout=120s || true
 
 helm-install-ollama-external:
 	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .

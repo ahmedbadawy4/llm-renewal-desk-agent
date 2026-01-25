@@ -14,6 +14,7 @@ from ..core import debug as core_debug
 from ..core.config import Settings, get_settings
 from ..llm import ollama as ollama_client
 from ..storage import object_store
+from ..workers.job_queue import get_job_queue, JobStatus
 
 router = APIRouter()
 
@@ -36,14 +37,20 @@ async def ingest(
     if not any([contract, invoices, usage]):
         raise HTTPException(status_code=400, detail="Provide at least one file to ingest")
 
+    job_queue = get_job_queue(settings)
+    job_ids: list[str] = []
     saved: dict[str, str] = {}
     uploads = {"contract": contract, "invoices": invoices, "usage": usage}
+
     for label, file in uploads.items():
         if not file:
             continue
         contents = await file.read()
-        stored_path = object_store.store_file(vendor_id, f"{label}_{file.filename}", contents)
+        stored_path = object_store.store_file(vendor_id, f"{label}_{file.filename}", contents, doc_type=None)
         saved[label] = str(stored_path)
+
+        job_id = job_queue.submit(vendor_id, f"{label}_{file.filename}", stored_path, label)
+        job_ids.append(job_id)
 
     manifest = object_store.load_manifest(vendor_id)
     manifest.update(saved)
@@ -53,8 +60,72 @@ async def ingest(
         "status": "accepted",
         "vendor_id": vendor_id,
         "message": "Ingestion scheduled",
+        "job_ids": job_ids,
         "object_store": settings.object_store_bucket,
         "files": manifest,
+    }
+
+
+@router.get("/jobs/{job_id}", tags=["ingestion"])
+async def get_job_status(job_id: str, settings: Settings = Depends(get_settings)) -> Dict[str, Any]:
+    job_queue = get_job_queue(settings)
+    job = job_queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return {
+        "job_id": job.job_id,
+        "vendor_id": job.vendor_id,
+        "filename": job.filename,
+        "doc_type": job.doc_type,
+        "status": job.status.value,
+        "created_at": job.created_at.isoformat(),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error": job.error,
+        "result": job.result,
+    }
+
+
+@router.get("/jobs", tags=["ingestion"])
+async def list_jobs(
+    vendor_id: str | None = None,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    job_queue = get_job_queue(settings)
+    jobs = job_queue.list_jobs(vendor_id)
+
+    return {
+        "jobs": [
+            {
+                "job_id": job.job_id,
+                "vendor_id": job.vendor_id,
+                "filename": job.filename,
+                "doc_type": job.doc_type,
+                "status": job.status.value,
+                "created_at": job.created_at.isoformat(),
+            }
+            for job in jobs
+        ]
+    }
+
+
+@router.post("/renewal-brief/batch", tags=["agent"])
+async def batch_renewal_brief(
+    vendor_ids: list[str],
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    from ..scheduler.jobs import process_batch_renewal_briefs
+
+    results = await process_batch_renewal_briefs(vendor_ids, settings)
+    success_count = sum(1 for r in results if r["status"] == "success")
+
+    return {
+        "status": "completed",
+        "total": len(results),
+        "successful": success_count,
+        "failed": len(results) - success_count,
+        "results": results,
     }
 
 
@@ -132,3 +203,51 @@ async def debug_trace(request_id: str) -> Dict[str, Any]:
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
     return trace
+
+
+@router.get("/debug/traces", tags=["debug"])
+async def search_traces(
+    vendor_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    error_type: str | None = None,
+    limit: int = 100,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    from datetime import datetime
+
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+
+    traces = core_debug.search_traces(
+        vendor_id=vendor_id,
+        start_date=start,
+        end_date=end,
+        error_type=error_type,
+        limit=limit,
+        settings=settings,
+    )
+
+    return {"traces": traces, "count": len(traces)}
+
+
+@router.get("/debug/traces/export", tags=["debug"])
+async def export_traces(
+    vendor_id: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    settings: Settings = Depends(get_settings),
+) -> Dict[str, Any]:
+    from datetime import datetime
+
+    start = datetime.fromisoformat(start_date) if start_date else None
+    end = datetime.fromisoformat(end_date) if end_date else None
+
+    traces = core_debug.export_traces(
+        vendor_id=vendor_id,
+        start_date=start,
+        end_date=end,
+        settings=settings,
+    )
+
+    return {"traces": traces, "count": len(traces)}

@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-from typing import Iterable
+from .injection_classifier import InjectionClassifier
 
-INJECTION_PATTERNS: tuple[str, ...] = (
-    "ignore previous",
-    "disregard",
-    "send credentials",
-    "http://",
-    "https://",
-    "email credentials",
-    "leak",
-)
+_injection_classifier: InjectionClassifier | None = None
 
 
-def contains_prompt_injection(text: str, patterns: Iterable[str] | None = None) -> bool:
-    haystack = text.lower()
-    pats = patterns or INJECTION_PATTERNS
-    return any(pat in haystack for pat in pats)
+def _get_classifier() -> InjectionClassifier:
+    global _injection_classifier
+    if _injection_classifier is None:
+        _injection_classifier = InjectionClassifier()
+    return _injection_classifier
+
+
+def contains_prompt_injection(text: str, threshold: float = 0.5) -> bool:
+    classifier = _get_classifier()
+    return classifier.is_injection(text, threshold=threshold)

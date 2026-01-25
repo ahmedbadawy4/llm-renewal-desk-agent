@@ -27,6 +27,9 @@ class Settings(BaseSettings):
         default="llama3.1:8b",
         validation_alias=AliasChoices("LLM_MODEL", "OLLAMA_MODEL"),
     )
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(default="https://api.openai.com/v1", validation_alias="OPENAI_BASE_URL")
+    openai_model: str = Field(default="gpt-3.5-turbo", validation_alias="OPENAI_MODEL")
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.routes import router
 from .core import config, metrics
 from .core.logging import configure_logging
-from .core.middleware import MetricsMiddleware
+from .core.middleware import MetricsMiddleware, RateLimitMiddleware
 from .core.tracing import configure_tracing
 
 configure_logging()
@@ -20,6 +20,7 @@ app = FastAPI(
     description="Decision-support agent for SaaS renewals (RAG + guardrails)",
 )
 app.add_middleware(MetricsMiddleware)
+app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

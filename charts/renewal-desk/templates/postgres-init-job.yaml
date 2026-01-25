@@ -1,0 +1,32 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "renewal-desk.fullname" . }}-postgres-init
+  labels:
+    {{- include "renewal-desk.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: postgres
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init
+          image: pgvector/pgvector:pg15
+          command:
+            - /bin/bash
+            - -c
+            - |
+              until pg_isready -h {{ include "renewal-desk.fullname" . }}-postgres -U postgres; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+              psql -h {{ include "renewal-desk.fullname" . }}-postgres -U postgres -d renewaldesk -c "CREATE EXTENSION IF NOT EXISTS vector;" || echo "Extension may already exist"
+          env:
+            - name: PGPASSWORD
+              value: "postgres"
+{{- end }}

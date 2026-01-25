@@ -49,6 +49,32 @@ LLM_LATENCY = Histogram(
     labelnames=("provider",),
 )
 
+RENEWAL_BRIEFS_GENERATED = Counter(
+    "renewal_briefs_generated_total",
+    "Total renewal briefs generated",
+    labelnames=("vendor_id",),
+)
+
+VENDORS_PROCESSED = Counter(
+    "vendors_processed_total",
+    "Total vendors processed",
+)
+
+SLO_LATENCY_P95 = Histogram(
+    "slo_latency_p95_seconds",
+    "P95 latency for SLO tracking",
+)
+
+SLO_ERROR_RATE = Gauge(
+    "slo_error_rate",
+    "Error rate for SLO tracking",
+)
+
+SLO_CITATION_COVERAGE = Gauge(
+    "slo_citation_coverage",
+    "Citation coverage for SLO tracking",
+)
+
 
 def record_agent_completion(status: str) -> None:
     AGENT_REQUESTS.labels(status=status).inc()
@@ -102,3 +128,17 @@ class LLMRequestTimer:
     def observe(self) -> None:
         duration = time.perf_counter() - self.start
         LLM_LATENCY.labels(provider=self.provider).observe(duration)
+
+
+def record_renewal_brief_generated(vendor_id: str) -> None:
+    RENEWAL_BRIEFS_GENERATED.labels(vendor_id=vendor_id).inc()
+
+
+def record_vendor_processed() -> None:
+    VENDORS_PROCESSED.inc()
+
+
+def record_slo_metrics(latency_p95: float, error_rate: float, citation_coverage: float) -> None:
+    SLO_LATENCY_P95.observe(latency_p95)
+    SLO_ERROR_RATE.set(error_rate)
+    SLO_CITATION_COVERAGE.set(citation_coverage)

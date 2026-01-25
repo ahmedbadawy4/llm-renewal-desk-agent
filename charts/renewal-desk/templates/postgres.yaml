@@ -7,7 +7,7 @@ metadata:
     {{- include "renewal-desk.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
-  replicas: 1
+  replicas: {{ .Values.postgres.replicas | default 1 }}
   selector:
     matchLabels:
       app.kubernetes.io/component: postgres
@@ -18,9 +18,26 @@ spec:
         app.kubernetes.io/component: postgres
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      securityContext:
+        fsGroup: 999
+      initContainers:
+        - name: fix-permissions
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/lib/postgresql/data
+              chown -R 999:999 /var/lib/postgresql/data
+              chmod 700 /var/lib/postgresql/data
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 0
       containers:
         - name: postgres
-          image: postgres:15
+          image: pgvector/pgvector:pg15
           ports:
             - containerPort: 5432
           env:
@@ -30,9 +47,15 @@ spec:
               value: "postgres"
             - name: POSTGRES_DB
               value: "renewaldesk"
+            - name: POSTGRES_INITDB_ARGS
+              value: "--auth-host=scram-sha-256"
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+          securityContext:
+            runAsUser: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
       volumes:
         - name: data
           emptyDir: {}
