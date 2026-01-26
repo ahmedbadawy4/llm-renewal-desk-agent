@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Dict
 
 from ..core.config import Settings
-from ..storage import object_store
 from ..storage import pdf_parser
 from ..storage.indexing import index_document
 

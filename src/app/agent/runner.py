@@ -22,7 +22,6 @@ from ..core import cache as core_cache
 from ..core import debug as core_debug
 from ..core import metrics as core_metrics
 from ..core.config import Settings
-from ..llm import ollama
 from ..llm.router import ModelRouter
 from ..storage import object_store
 from ..storage import pdf_parser
@@ -196,8 +195,10 @@ def generate_brief(
                 citations=_citations(contract_doc, span="TERM"),
             )
 
+            stated_price = _get_float_field(contract_fields, "stated_price")
+            annual_spend = invoices_summary.annual_spend_usd or stated_price
             pricing = schemas.Pricing(
-                annual_spend_usd=invoices_summary.annual_spend_usd,
+                annual_spend_usd=annual_spend,
                 uplift_clause_pct=_get_float_field(contract_fields, "uplift_pct"),
                 citations=_citations(invoices_doc, span="PRICING"),
             )
@@ -219,7 +220,14 @@ def generate_brief(
 
             negotiation_plan = _build_negotiation_plan(contract_fields, usage_summary, contract_doc)
 
-        draft_email, draft_source = _draft_email(vendor_id, usage_summary, invoices_summary, settings)
+        draft_email, draft_source = _draft_email(
+            vendor_id, 
+            usage_summary, 
+            invoices_summary, 
+            pricing,
+            usage,
+            settings
+        )
 
         brief = schemas.RenewalBrief(
             vendor_id=vendor_id,
@@ -345,7 +353,7 @@ def _synthesize_brief_with_ollama(
 
     timer = core_metrics.LLMRequestTimer("llm")
     try:
-        response = _call_llm(settings, messages, estimated_tokens=estimated_prompt_tokens, complexity="medium")
+        response = _call_llm(settings, messages, estimated_tokens=int(estimated_prompt_tokens), complexity="medium")
     except Exception:
         core_metrics.record_llm_error("request_failed")
         return None, {"tokens_in": 0, "tokens_out": 0, "cost_usd_estimate": None}
@@ -625,9 +633,13 @@ def _extract_contract_fields(text: str, contract_path: Optional[Path] = None) ->
     if uplift_match:
         result["uplift_pct"] = float(uplift_match.group(1))
 
-    price_match = re.search(r"\$([0-9,]+)", text)
-    if price_match:
-        result["stated_price"] = float(price_match.group(1).replace(",", ""))
+    annual_fee_match = re.search(r"annual\s+(?:license\s+)?fee\s+is\s+\$([0-9,]+)", text, re.IGNORECASE)
+    if annual_fee_match:
+        result["stated_price"] = float(annual_fee_match.group(1).replace(",", ""))
+    else:
+        price_match = re.search(r"\$([0-9,]+)", text)
+        if price_match:
+            result["stated_price"] = float(price_match.group(1).replace(",", ""))
 
     seats_match = re.search(r"licensed\s+for\s+(\d+)\s+seats", text, re.IGNORECASE)
     if seats_match:
@@ -773,22 +785,30 @@ def _draft_email(
     vendor_id: str,
     usage_summary: UsageSummary,
     invoices_summary: SpendSummary,
+    pricing: schemas.Pricing,
+    usage: schemas.UsageInsights,
     settings: Settings,
 ) -> tuple[schemas.DraftEmail, str]:
     if settings.llm_provider.strip().lower() == "ollama":
-        llm_email = _draft_email_with_ollama(vendor_id, usage_summary, invoices_summary, settings)
+        llm_email = _draft_email_with_ollama(vendor_id, usage_summary, invoices_summary, pricing, usage, settings)
         if llm_email:
             return llm_email, "ollama"
-    return _draft_email_fallback(vendor_id, usage_summary, invoices_summary), "heuristic"
+    return _draft_email_fallback(vendor_id, usage_summary, invoices_summary, pricing, usage), "heuristic"
 
 
 def _draft_email_fallback(
     vendor_id: str,
     usage_summary: UsageSummary,
     invoices_summary: SpendSummary,
+    pricing: schemas.Pricing,
+    usage: schemas.UsageInsights,
 ) -> schemas.DraftEmail:
-    delta = usage_summary.delta_percent or 0
-    spend = invoices_summary.annual_spend_usd or 0
+    spend = pricing.annual_spend_usd
+    if spend is None:
+        spend = invoices_summary.annual_spend_usd or 0
+    delta = usage.delta_percent
+    if delta is None:
+        delta = usage_summary.delta_percent or 0
     subject = f"{vendor_id} renewal discussion"
     body = (
         f"Hi {vendor_id.title()} team,\n\n"
@@ -804,10 +824,16 @@ def _draft_email_with_ollama(
     vendor_id: str,
     usage_summary: UsageSummary,
     invoices_summary: SpendSummary,
+    pricing: schemas.Pricing,
+    usage: schemas.UsageInsights,
     settings: Settings,
 ) -> Optional[schemas.DraftEmail]:
-    delta = usage_summary.delta_percent or 0
-    spend = invoices_summary.annual_spend_usd or 0
+    spend = pricing.annual_spend_usd
+    if spend is None:
+        spend = invoices_summary.annual_spend_usd or 0
+    delta = usage.delta_percent
+    if delta is None:
+        delta = usage_summary.delta_percent or 0
     direction = "below" if delta < 0 else "above"
     prompt = (
         "Write a concise renewal outreach email. Return JSON with keys "

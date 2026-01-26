@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
 except ImportError:
     SentenceTransformer = None
 

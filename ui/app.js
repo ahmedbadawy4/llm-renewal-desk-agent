@@ -11,11 +11,8 @@ const ingestBtn = document.getElementById("ingestBtn");
 const briefBtn = document.getElementById("briefBtn");
 const output = document.getElementById("briefOutput");
 const requestId = document.getElementById("requestId");
-const traceBtn = document.getElementById("traceBtn");
-const traceOutput = document.getElementById("traceOutput");
-const traceRequestIdInput = document.getElementById("traceRequestId");
+const draftEmail = document.getElementById("draftEmail");
 const refreshToggle = document.getElementById("refreshToggle");
-const loadSamples = document.getElementById("loadSamples");
 const checkHealth = document.getElementById("checkHealth");
 const apiStatus = document.getElementById("apiStatus");
 
@@ -62,38 +59,6 @@ function updateFromInputs() {
     .filter(([, value]) => Boolean(value))
     .map(([key, value]) => `${key}: ${value.name}`);
   setFileStatus(names.length ? names.join(" | ") : "No files selected yet.");
-}
-
-async function loadSampleFile(path, name, type) {
-  const response = await fetch(path);
-  if (!response.ok) {
-    throw new Error(`Failed to load ${name}`);
-  }
-  const blob = await response.blob();
-  return new File([blob], name, { type });
-}
-
-async function loadSampleFiles() {
-  try {
-    loadSamples.disabled = true;
-    loadSamples.textContent = "Loading samples...";
-
-    const [contract, invoices, usage] = await Promise.all([
-      loadSampleFile("assets/sample_contract.pdf", "sample_contract.pdf", "application/pdf"),
-      loadSampleFile("assets/invoices.csv", "invoices.csv", "text/csv"),
-      loadSampleFile("assets/usage.csv", "usage.csv", "text/csv"),
-    ]);
-
-    selectedFiles.contract = contract;
-    selectedFiles.invoices = invoices;
-    selectedFiles.usage = usage;
-    setFileStatus("Sample files loaded and ready to ingest.");
-  } catch (error) {
-    setFileStatus(error.message);
-  } finally {
-    loadSamples.disabled = false;
-    loadSamples.textContent = "Use bundled sample files";
-  }
 }
 
 async function checkApiHealth() {
@@ -154,10 +119,23 @@ async function ingestFiles() {
   }
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatEmailBody(body) {
+  if (!body) return "";
+  const escaped = escapeHtml(body);
+  return escaped.replace(/\n/g, "<br>");
+}
+
 async function generateBrief() {
   briefBtn.disabled = true;
   briefBtn.textContent = "Working...";
   output.textContent = "Running the agent...";
+  draftEmail.innerHTML = '<p class="waiting">Running the agent...</p>';
 
   const llmProvider = llmProviderSelect.value || null;
   const ollamaBaseUrl = ollamaBaseUrlInput.value.trim() || null;
@@ -187,48 +165,31 @@ async function generateBrief() {
 
     output.textContent = JSON.stringify(payload, null, 2);
     requestId.textContent = payload.request_id || "Unknown";
-    if (payload.request_id) {
-      traceRequestIdInput.value = payload.request_id;
+    
+    if (payload.brief && payload.brief.draft_email) {
+      const email = payload.brief.draft_email;
+      draftEmail.innerHTML = `
+        <div class="email-subject">${escapeHtml(email.subject || "No subject")}</div>
+        <div class="email-body">${formatEmailBody(email.body || "")}</div>
+      `;
+    } else {
+      draftEmail.innerHTML = '<p class="waiting">No draft email in response.</p>';
     }
   } catch (error) {
     output.textContent = `Error: ${error.message}`;
+    draftEmail.innerHTML = `<p class="error">Error: ${escapeHtml(error.message)}</p>`;
   } finally {
     briefBtn.disabled = false;
     briefBtn.textContent = "Generate brief";
   }
 }
 
-async function fetchTrace() {
-  const traceId = traceRequestIdInput.value.trim() || requestId.textContent;
-  if (!traceId || traceId === "None yet") {
-    traceOutput.textContent = "No request ID available.";
-    return;
-  }
-  traceBtn.disabled = true;
-  traceBtn.textContent = "Loading...";
-  try {
-    const response = await fetch(`${apiBase()}/debug/trace/${encodeURIComponent(traceId)}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || "Trace not found");
-    }
-    traceOutput.textContent = JSON.stringify(payload, null, 2);
-  } catch (error) {
-    traceOutput.textContent = `Error: ${error.message}`;
-  } finally {
-    traceBtn.disabled = false;
-    traceBtn.textContent = "Fetch trace";
-  }
-}
-
 contractInput.addEventListener("change", updateFromInputs);
 invoicesInput.addEventListener("change", updateFromInputs);
 usageInput.addEventListener("change", updateFromInputs);
-loadSamples.addEventListener("click", loadSampleFiles);
 checkHealth.addEventListener("click", checkApiHealth);
 ingestBtn.addEventListener("click", ingestFiles);
 briefBtn.addEventListener("click", generateBrief);
-traceBtn.addEventListener("click", fetchTrace);
 
 if (runtimeConfig.API_BASE_URL) {
   apiBaseInput.value = runtimeConfig.API_BASE_URL;

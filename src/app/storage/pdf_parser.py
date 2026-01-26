@@ -4,10 +4,10 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List
 
 try:
-    import fitz
+    import fitz  # type: ignore[import-untyped]
 except ImportError:
     fitz = None
 

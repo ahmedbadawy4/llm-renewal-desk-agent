@@ -4,7 +4,6 @@ import hashlib
 import logging
 import random
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from ..storage.postgres import get_connection
@@ -229,7 +228,7 @@ class ExperimentTracker:
         se = pooled_std * (1 / control_metrics["count"] + 1 / treatment_metrics["count"]) ** 0.5
         t_stat = (treatment_mean - control_mean) / se if se > 0 else 0
 
-        from scipy import stats
+        from scipy import stats  # type: ignore[import-untyped]
 
         df = control_metrics["count"] + treatment_metrics["count"] - 2
         p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))

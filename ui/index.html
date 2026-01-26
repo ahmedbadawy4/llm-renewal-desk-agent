@@ -6,10 +6,6 @@
     <title>Renewal Desk UI</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Space+Grotesk:wght@400;600&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -26,7 +22,7 @@
         <div class="status-card" id="statusCard">
           <p class="status-title">API status</p>
           <p class="status-value" id="apiStatus">Not checked</p>
-          <button class="ghost" id="checkHealth">Check health</button>
+          <button id="checkHealth">Check health</button>
         </div>
       </header>
 
@@ -82,8 +78,7 @@
           </label>
         </div>
         <div class="actions">
-          <button id="loadSamples" class="ghost">Use bundled sample files</button>
-          <button id="ingestBtn">Upload &amp; ingest</button>
+          <button id="ingestBtn" class="primary">Upload &amp; ingest</button>
         </div>
         <p class="hint" id="fileStatus">No files selected yet.</p>
       </section>
@@ -101,29 +96,30 @@
             <input id="refreshToggle" type="checkbox" />
             <span>Force refresh</span>
           </label>
-          <button id="briefBtn">Generate brief</button>
+          <button id="briefBtn" class="primary">Generate brief</button>
         </div>
         <div class="output">
           <div>
-            <p class="output-title">Response</p>
-            <pre id="briefOutput">Waiting for a request...</pre>
+            <p class="output-title">Draft Email</p>
+            <div id="draftEmail" class="draft-email">
+              <p class="waiting">Waiting for a request...</p>
+            </div>
           </div>
           <div>
             <p class="output-title">Last request ID</p>
             <p id="requestId" class="pill">None yet</p>
           </div>
         </div>
-        <div class="trace">
-          <div class="trace-header">
-            <p class="output-title">Debug trace</p>
-            <button id="traceBtn" class="ghost">Fetch trace</button>
-          </div>
-          <label class="field">
-            <span>Trace request ID</span>
-            <input id="traceRequestId" type="text" placeholder="Use the latest request ID" />
-          </label>
-          <pre id="traceOutput">No trace yet.</pre>
-        </div>
+        <details class="panel collapsible">
+          <summary class="panel-summary">
+            <div class="panel-header">
+              <h2>Technical Details</h2>
+              <p>Full JSON response</p>
+            </div>
+            <span class="panel-toggle" aria-hidden="true"></span>
+          </summary>
+          <pre id="briefOutput">Waiting for a request...</pre>
+        </details>
       </details>
     </main>
 

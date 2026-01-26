@@ -73,8 +73,14 @@ helm-install:
 		--set-string app.deployTimestamp=$$TIMESTAMP; \
 	echo "Forcing rollout restart to use new image..."; \
 	$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE); \
+	if $(KUBECTL) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui &>/dev/null; then \
+		$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE)-ui; \
+	fi; \
 	echo "Waiting for rollout to complete..."; \
-	$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE) --timeout=120s || true
+	$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE) --timeout=120s || true; \
+	if $(KUBECTL) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui &>/dev/null; then \
+		$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE)-ui --timeout=60s || true; \
+	fi
 
 helm-install-ollama-external:
 	docker build -t $(IMAGE_REPO):$(IMAGE_TAG) .
