@@ -623,7 +623,7 @@ def _extract_contract_fields(text: str, contract_path: Optional[Path] = None) ->
         result["term_start"] = _parse_date(term_match.group(1).strip())
         result["term_end"] = _parse_date(term_match.group(2).strip())
 
-    notice_match = re.search(r"notice\s+(\d{1,3})\s+days", text, re.IGNORECASE)
+    notice_match = re.search(r"notice.*?(\d{1,3})\s+days", text, re.IGNORECASE)
     if notice_match:
         result["notice_window_days"] = int(notice_match.group(1))
 
