@@ -13,13 +13,31 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-postgres
+          image: pgvector/pgvector:pg15
+          command:
+            - /bin/bash
+            - -c
+            - |
+              until pg_isready -h {{ include "renewal-desk.fullname" . }}-postgres -U postgres; do
+                echo "Waiting for postgres to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+          env:
+            - name: PGPASSWORD
+              value: "postgres"
       containers:
         - name: migrations
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: /app
           env:
             - name: DATABASE_URL
               value: "postgresql://postgres:postgres@{{ include "renewal-desk.fullname" . }}-postgres:5432/renewaldesk"
+            - name: PYTHONPATH
+              value: "/app/src"
           command:
             - python
             - scripts/migrate.py

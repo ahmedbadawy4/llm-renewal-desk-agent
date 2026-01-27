@@ -109,7 +109,7 @@ class VectorStore:
         query_embedding: list[float],
         k: int = 5,
         doc_type: str | None = None,
-    ) -> list[dict[str, float | str]]:
+    ) -> list[dict[str, float | str | int]]:
         if not self.enabled:
             return []
 

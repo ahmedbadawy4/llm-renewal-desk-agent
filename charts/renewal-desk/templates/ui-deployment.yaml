@@ -20,6 +20,9 @@ spec:
         app.kubernetes.io/component: ui
       annotations:
         checksum/ui-config: {{ include (print $.Template.BasePath "/ui-configmap.yaml") . | sha256sum }}
+        {{- if .Values.app.deployTimestamp }}
+        deploy-timestamp: {{ .Values.app.deployTimestamp | quote }}
+        {{- end }}
     spec:
       containers:
         - name: ui

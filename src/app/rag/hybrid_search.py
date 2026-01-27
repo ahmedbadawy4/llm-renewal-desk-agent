@@ -48,9 +48,9 @@ class HybridSearcher:
             results = self.vector_store.query(vendor_id, query_embedding, k, doc_type=source)
             return [
                 {
-                    "doc_id": r["doc_id"],
-                    "chunk_index": r["chunk_index"],
-                    "snippet": r["chunk_text"][:200] + "..." if len(r["chunk_text"]) > 200 else r["chunk_text"],
+                    "doc_id": str(r["doc_id"]),
+                    "chunk_index": int(r["chunk_index"]),
+                    "snippet": (str(r["chunk_text"])[:200] + "..." if len(str(r["chunk_text"])) > 200 else str(r["chunk_text"])),
                     "score": float(r["similarity"]),
                     "method": "vector",
                 }
@@ -70,9 +70,6 @@ class HybridSearcher:
         try:
             with get_connection(self.settings) as conn:
                 with conn.cursor() as cur:
-                    query_terms = query.lower().split()
-                    query_ts = " & ".join(query_terms)
-
                     cur.execute(
                         """
                         SELECT doc_id, chunk_index, chunk_text,

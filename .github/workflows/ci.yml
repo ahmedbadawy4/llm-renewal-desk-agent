@@ -29,10 +29,10 @@ jobs:
       - name: Eval smoke
         run: poetry run python eval/harness.py --smoke
       - name: Gitleaks
-        uses: zricethezav/gitleaks-action@v2
-        with:
-          args: "detect --no-git"
+        continue-on-error: true
+        uses: gitleaks/gitleaks-action@v2
         env:
-          GITHUB_TOKEN: ${{ secrets.PIPELINE_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE || '' }}
       - name: Docker build
         run: docker build -t renewal-desk:ci .

@@ -14,7 +14,7 @@ from ..core import debug as core_debug
 from ..core.config import Settings, get_settings
 from ..llm import ollama as ollama_client
 from ..storage import object_store
-from ..workers.job_queue import get_job_queue, JobStatus
+from ..workers.job_queue import get_job_queue
 
 router = APIRouter()
 

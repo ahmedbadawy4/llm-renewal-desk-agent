@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from ..core.config import Settings
-from ..core.retry import retry_with_backoff, RetryConfig, with_circuit_breaker, CircuitBreaker
+from ..core.retry import retry_with_backoff, RetryConfig, CircuitBreaker
 from . import ollama
 from .openai import chat_completion as openai_chat_completion
 

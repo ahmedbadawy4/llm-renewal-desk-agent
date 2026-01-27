@@ -7,7 +7,7 @@ from src.app.main import create_app
 
 
 def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
-    def fake_call(settings, payload):
+    def fake_call(settings, messages, estimated_tokens=0, complexity="medium"):
         content = json.dumps(
             {
                 "renewal_terms": {
@@ -20,7 +20,7 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
                 "pricing": {
                     "annual_spend_usd": 120000.0,
                     "uplift_clause_pct": 5.0,
-                    "citations": [],
+                    "citations": [{"doc_id": "invoices", "page": None, "span": "PRICING"}],
                 },
                 "usage": {
                     "allocated_seats": 500,
@@ -49,7 +49,7 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
             "eval_count": 220,
         }
 
-    monkeypatch.setattr(runner, "_call_ollama_chat", fake_call)
+    monkeypatch.setattr(runner, "_call_llm", fake_call)
 
     client = TestClient(create_app())
     resp = client.post(
@@ -64,9 +64,9 @@ def test_renewal_brief_smoke_with_mocked_llm(monkeypatch):
     assert brief.usage.citations
     assert brief.risk_flags.citations
     assert brief.negotiation_plan.citations
-    assert brief.pricing.annual_spend_usd is None
-    assert brief.pricing.uplift_clause_pct is None
-    assert brief.pricing.citations == []
+    assert brief.pricing.annual_spend_usd == 120000.0
+    assert brief.pricing.uplift_clause_pct == 5.0
+    assert brief.pricing.citations
     citations = sum(
         len(section.citations)
         for section in [

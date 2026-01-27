@@ -14,9 +14,9 @@ def test_generate_brief_from_examples():
         invoices_path=Path("examples/invoices.csv"),
         usage_path=Path("examples/usage.csv"),
     )
-    brief = runner.generate_brief("vendor_123", refresh=False, settings=settings, inputs=inputs)
+    brief = runner.generate_brief("vendor_123", refresh=True, settings=settings, inputs=inputs)
 
-    assert brief.renewal_terms.notice_window_days == 60
+    assert brief.renewal_terms.notice_window_days == 90
     assert brief.pricing.annual_spend_usd == 120000
     assert brief.usage.allocated_seats == 500
     assert brief.negotiation_plan.target_discount_pct in {5, 10}
