@@ -23,3 +23,8 @@ output "alb_dns_name" {
   value       = module.alb.alb_dns_name
   description = "ALB DNS name"
 }
+
+output "github_deploy_role_arn" {
+  value       = one(aws_iam_role.github_deploy[*].arn)
+  description = "Role for the deploy workflow. Set it as the variable AWS_ROLE_ARN in the GitHub environment production. Null when github_repository is empty"
+}
