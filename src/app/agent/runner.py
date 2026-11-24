@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import logging
 import re
@@ -20,6 +21,7 @@ from .safety import contains_prompt_injection
 from . import validators
 from ..core import cache as core_cache
 from ..core import debug as core_debug
+from ..core import encryption as core_encryption
 from ..core import metrics as core_metrics
 from ..core.config import Settings
 from ..llm.router import ModelRouter
@@ -88,8 +90,10 @@ def generate_brief(
     settings: Settings,
     inputs: Optional[InputPaths] = None,
 ) -> schemas.RenewalBrief:
+    # One key per vendor. `refresh` only skips the lookup, so a refreshed brief
+    # replaces the cached one that later requests read.
     cache = core_cache.get_cache()
-    cache_key = cache.cache_key("brief", vendor_id, refresh)
+    cache_key = cache.cache_key("brief", vendor_id)
 
     if not refresh:
         cached = cache.get(cache_key)
@@ -244,8 +248,6 @@ def generate_brief(
         coverage_ratio = validators.citation_coverage_ratio(brief)
     core_metrics.record_citation_coverage(coverage_ratio)
 
-    cache = core_cache.get_cache()
-    cache_key = cache.cache_key("brief", vendor_id, refresh)
     cache.set(cache_key, brief.model_dump(), ttl_seconds=3600)
 
     tokens_in = _estimate_tokens(contract_text, invoices_text, usage_text)
@@ -528,7 +530,12 @@ _router_cache: Dict[str, ModelRouter] = {}
 
 
 def _get_router(settings: Settings) -> ModelRouter:
-    cache_key = f"{settings.llm_provider}_{settings.ollama_base_url}"
+    # The model and the output cap are part of the key so a per-request model
+    # override gets its own router instead of reusing the first one created.
+    cache_key = (
+        f"{settings.llm_provider}_{settings.ollama_base_url}_"
+        f"{settings.ollama_model}_{settings.max_output_tokens}"
+    )
     if cache_key not in _router_cache:
         _router_cache[cache_key] = ModelRouter(settings)
     return _router_cache[cache_key]
@@ -603,7 +610,7 @@ def _read_text(path: Optional[Path]) -> str:
             logger.warning(f"PDF parsing failed for {path}: {e}. Async job may still be processing.")
             return ""
 
-    return path.read_text(encoding="utf-8", errors="ignore")
+    return core_encryption.read_text(path)
 
 
 def _extract_contract_fields(text: str, contract_path: Optional[Path] = None) -> ContractFields:
@@ -710,8 +717,7 @@ def _parse_date(value: str) -> Optional[date]:
 def _summarize_invoices(path: Optional[Path]) -> SpendSummary:
     if not path or not path.exists():
         return SpendSummary(annual_spend_usd=None, avg_seats=None)
-    with path.open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+    rows = list(csv.DictReader(io.StringIO(core_encryption.read_text(path))))
     if not rows:
         return SpendSummary(annual_spend_usd=None, avg_seats=None)
     total = sum(float(row.get("amount_usd", 0) or 0) for row in rows)
@@ -728,8 +734,7 @@ def _summarize_usage(path: Optional[Path], fallback_allocated: Optional[int]) ->
             delta_percent=None,
         )
 
-    with path.open("r", encoding="utf-8") as handle:
-        rows = list(csv.DictReader(handle))
+    rows = list(csv.DictReader(io.StringIO(core_encryption.read_text(path))))
     if not rows:
         return UsageSummary(
             allocated_seats=fallback_allocated,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import sys
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -67,12 +68,15 @@ def evaluate_case(
             mismatches=[],
             citation_gaps=[],
             tolerance_violations=[],
-            details={"message": "Files parsed"},
+            details={"message": "Smoke mode: case loaded, agent skipped"},
         )
 
     settings = Settings()
     vendor_id = case.payload.get("vendor_id", case.case_id)
     paths = _build_input_paths(case.payload.get("inputs", {}))
+    expect_injection = bool(case.payload.get("expect_injection")) or (
+        expected.get("expected_behavior") == "injection_detected"
+    )
 
     start_time = time.perf_counter()
     cost_estimate = 0.0
@@ -83,6 +87,8 @@ def evaluate_case(
 
         actual = json.loads(brief.model_dump_json())
         mismatches = _diff_expected(actual, expected, case.tolerance or {})
+        if expect_injection:
+            mismatches.append("injection_detected: expected the request to be blocked")
         citation_gaps = _citation_gaps(brief)
         tolerance_violations = _check_tolerance(actual, expected, case.tolerance or {})
 
@@ -114,8 +120,8 @@ def evaluate_case(
 
     except InjectionDetectedError:
         latency = time.perf_counter() - start_time
-        expected_behavior = expected.get("expected_behavior")
-        passed = expected_behavior == "injection_detected"
+        expected_behavior = "injection_detected" if expect_injection else expected.get("expected_behavior")
+        passed = expect_injection
 
         return EvalResult(
             case_id=case.case_id,
@@ -148,6 +154,13 @@ def evaluate_case(
         )
 
 
+def _tolerance_for(tolerance: Dict[str, float], section: str, key: str) -> float | None:
+    """Fractional tolerance for a field, given as `section.key` or just `key`."""
+    if f"{section}.{key}" in tolerance:
+        return tolerance[f"{section}.{key}"]
+    return tolerance.get(key)
+
+
 def _check_tolerance(actual: Dict[str, Any], expected: Dict[str, Any], tolerance: Dict[str, float]) -> List[str]:
     violations: List[str] = []
     if not tolerance:
@@ -160,11 +173,12 @@ def _check_tolerance(actual: Dict[str, Any], expected: Dict[str, Any], tolerance
         act_section = actual.get(section)
         if isinstance(exp_value, dict) and isinstance(act_section, dict):
             for key, exp_val in exp_value.items():
-                if key in tolerance:
+                tol = _tolerance_for(tolerance, section, key)
+                if tol is not None:
                     act_val = act_section.get(key)
                     if isinstance(exp_val, (int, float)) and isinstance(act_val, (int, float)):
                         diff = abs(act_val - exp_val)
-                        threshold = abs(exp_val * tolerance[key])
+                        threshold = abs(exp_val * tol)
                         if diff > threshold:
                             violations.append(
                                 f"{section}.{key}: difference {diff} exceeds tolerance {threshold}"
@@ -188,12 +202,16 @@ def _diff_expected(
         if isinstance(exp_value, dict):
             for key, val in exp_value.items():
                 act_val = act_section.get(key) if isinstance(act_section, dict) else None
-                if key in tolerance:
+                tol = _tolerance_for(tolerance, section, key)
+                if tol is not None:
                     if isinstance(val, (int, float)) and isinstance(act_val, (int, float)):
                         diff = abs(act_val - val)
-                        threshold = abs(val * tolerance[key])
+                        threshold = abs(val * tol)
                         if diff > threshold:
                             mismatches.append(f"{section}.{key}: expected {val}, got {act_val} (diff: {diff})")
+                    elif str(act_val) != str(val):
+                        # A missing or non-numeric value cannot sit inside a numeric band.
+                        mismatches.append(f"{section}.{key}: expected {val}, got {act_val}")
                 else:
                     if str(act_val) != str(val):
                         mismatches.append(f"{section}.{key}: expected {val}, got {act_val}")
@@ -257,6 +275,9 @@ def check_regression(
             )
 
         baseline_latency = baseline.get("latency_seconds", 0.0)
+        if baseline_latency <= 0:
+            # A zero baseline, for example one saved from a smoke run, has no latency to compare with.
+            continue
         if current.latency_seconds > baseline_latency * (1 + regression_threshold):
             regressions.append(
                 {
@@ -292,7 +313,8 @@ def run(
     expected_path: pathlib.Path,
     smoke: bool,
     regression_check: bool = False,
-) -> None:
+) -> int:
+    """Run the cases, write the reports and return the process exit code."""
     cases_data = load_jsonl(cases_path)
     cases = [
         EvalCase(
@@ -356,23 +378,36 @@ def run(
     with report_path.open("w", encoding="utf-8") as handle:
         json.dump({"results": results_dict, "summary": summary}, handle, indent=2)
 
+    regression_count = 0
     if regression_check:
         regression_report = check_regression(results, baseline_path)
         regression_path = report_dir / "regression-report.json"
         with regression_path.open("w", encoding="utf-8") as handle:
             json.dump(regression_report, handle, indent=2)
-        print(f"Regression check: {regression_report['regression_count']} regressions found")
+        if regression_report.get("status") == "no_baseline":
+            print(f"Regression check skipped: no baseline at {baseline_path}")
+        else:
+            regression_count = regression_report["regression_count"]
+            print(f"Regression check: {regression_count} regressions found")
         print(f"Wrote regression report to {regression_path}")
 
     print(json.dumps(summary, indent=2))
     print(f"Wrote report to {report_path}")
+
+    # A smoke run never calls the agent, so only a full run can fail on cases.
+    failed_cases = 0 if smoke else summary["failed"]
+    return 1 if failed_cases or regression_count else 0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Renewal Desk eval harness")
     parser.add_argument("--cases", type=pathlib.Path, default=pathlib.Path("eval/golden/cases.jsonl"))
     parser.add_argument("--expected", type=pathlib.Path, default=pathlib.Path("eval/golden/expected.jsonl"))
-    parser.add_argument("--smoke", action="store_true", help="Only verify files and serialization")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Load the cases and write the report without running the agent",
+    )
     parser.add_argument("--regression-check", action="store_true", help="Check for regressions against baseline")
     return parser.parse_args()
 
@@ -391,4 +426,4 @@ def _build_input_paths(inputs: Dict[str, Any]) -> runner.InputPaths:
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.cases, args.expected, smoke=args.smoke, regression_check=args.regression_check)
+    sys.exit(run(args.cases, args.expected, smoke=args.smoke, regression_check=args.regression_check))

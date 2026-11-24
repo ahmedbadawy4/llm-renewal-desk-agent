@@ -5,7 +5,3 @@ module "s3" {
   environment = var.environment
   tags        = local.tags
 }
-
-output "s3_bucket_name" {
-  value = module.s3.bucket_name
-}

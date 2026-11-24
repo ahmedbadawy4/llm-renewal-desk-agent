@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (ignored by git).
+# Do not put db_password in a file: export TF_VAR_db_password instead.
+aws_region  = "us-east-1"
+environment = "dev"
+app_image   = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/renewal-desk:<tag>"
+
+# Leave vpc_id empty to create a new VPC. To use an existing one, set all four:
+# vpc_id             = "vpc-0123456789abcdef0"
+# private_subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
+# public_subnet_ids  = ["subnet-cccc", "subnet-dddd"]
+# db_allowed_cidr_blocks = ["10.20.0.0/16"]   # CIDR of that VPC

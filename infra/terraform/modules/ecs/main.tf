@@ -61,7 +61,10 @@ resource "aws_ecs_service" "main" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.main.arn
   desired_count   = var.desired_count
-  launch_type      = "FARGATE"
+  launch_type     = "FARGATE"
+
+  # The deploy workflow runs the database migrations with `aws ecs execute-command`.
+  enable_execute_command = true
 
   network_configuration {
     subnets          = var.subnet_ids
@@ -76,6 +79,13 @@ resource "aws_ecs_service" "main" {
   }
 
   depends_on = [aws_iam_role_policy.ecs_execution]
+
+  # The deploy workflow registers new task definition revisions with the new image.
+  # Without this, the next `terraform apply` would roll the service back to the
+  # image that was passed in var.app_image.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 
   tags = var.tags
 }
@@ -104,8 +114,8 @@ resource "aws_security_group" "ecs" {
 
 resource "aws_cloudwatch_log_group" "main" {
   name              = "/ecs/${var.app_name}"
-  retention_in_days  = 7
-  tags               = var.tags
+  retention_in_days = 7
+  tags              = var.tags
 }
 
 resource "aws_iam_role" "ecs_execution" {
@@ -143,6 +153,28 @@ resource "aws_iam_role_policy" "ecs_execution" {
           "ecr:BatchGetImage",
           "logs:CreateLogStream",
           "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Lets `aws ecs execute-command` open a session in a running task.
+resource "aws_iam_role_policy" "ecs_task_exec" {
+  name = "${var.app_name}-ecs-task-exec-policy"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
         ]
         Resource = "*"
       }

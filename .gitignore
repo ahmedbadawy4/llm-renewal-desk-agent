@@ -212,3 +212,11 @@ __marimo__/
 
 # Local object store + ingestion artifacts
 .data/
+
+# Terraform: local state, plugins and variable files that hold secrets
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+backend.hcl

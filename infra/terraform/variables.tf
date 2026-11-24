@@ -5,9 +5,14 @@ variable "aws_region" {
 }
 
 variable "environment" {
-  description = "Environment name"
+  description = "Environment name. Only \"production\" turns on Multi-AZ and deletion protection for the database"
   type        = string
-  default     = "production"
+  default     = "dev"
+
+  validation {
+    condition     = contains(["dev", "staging", "production"], var.environment)
+    error_message = "environment must be dev, staging or production."
+  }
 }
 
 variable "vpc_id" {
@@ -56,10 +61,4 @@ variable "db_max_allocated_storage" {
   description = "RDS max allocated storage in GB"
   type        = number
   default     = 200
-}
-
-variable "enable_opensearch" {
-  description = "Enable OpenSearch for hybrid search"
-  type        = bool
-  default     = false
 }

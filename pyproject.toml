@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "renewal-desk-agent"
 version = "0.1.0"
-description = "Production-style LLM renewal brief agent"
-authors = ["Your Name <you@example.com>"]
+description = "Prototype LLM agent that turns a vendor contract, invoices and usage data into a cited renewal brief"
+authors = ["Ahmed Badawy"]
 readme = "README.md"
 packages = [{ include = "src" }]
 

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .api.routes import router
 from .core import config, metrics
 from .core.logging import configure_logging
 from .core.middleware import MetricsMiddleware, RateLimitMiddleware
 from .core.tracing import configure_tracing
+from .storage.object_store import InvalidStorageNameError
 
 configure_logging()
 configure_tracing()
@@ -20,13 +22,22 @@ app = FastAPI(
     description="Decision-support agent for SaaS renewals (RAG + guardrails)",
 )
 app.add_middleware(MetricsMiddleware)
-app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+app.add_middleware(
+    RateLimitMiddleware,
+    max_requests=settings.rate_limit_max_requests,
+    window_seconds=settings.rate_limit_window_seconds,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(InvalidStorageNameError)
+async def invalid_storage_name_handler(request: Request, exc: InvalidStorageNameError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 @app.get("/health", tags=["system"])

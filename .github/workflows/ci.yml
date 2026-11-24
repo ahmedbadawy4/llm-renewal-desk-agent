@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: ["*"]
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,7 +24,7 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: |
-          pip install poetry
+          pip install "poetry==2.2.1"
           poetry install
       - name: Lint
         run: poetry run ruff check src tests
@@ -36,3 +42,31 @@ jobs:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE || '' }}
       - name: Docker build
         run: docker build -t renewal-desk:ci .
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.0
+      - name: Lint and render the chart
+        run: make helm-lint
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Format check
+        run: terraform fmt -check -recursive
+      - name: Init without a backend
+        run: terraform init -backend=false
+      - name: Validate
+        run: terraform validate

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from ..core import encryption as core_encryption
 from ..core.config import Settings, get_settings
 from ..rag.chunking import chunk_text
 from ..rag.embeddings import generate_embeddings
@@ -31,7 +32,7 @@ def index_document(
             parse_result = pdf_parser.parse_pdf(file_path)
             text = parse_result.full_text
         else:
-            text = file_path.read_text(encoding="utf-8", errors="ignore")
+            text = core_encryption.read_text(file_path)
 
         if not text.strip():
             logger.warning(f"Empty document: {doc_id}")

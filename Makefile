@@ -7,10 +7,27 @@ HELM_RELEASE ?= renewal-desk
 HELM_NAMESPACE ?= renewal-desk
 IMAGE_REPO ?= renewal-desk
 IMAGE_TAG ?= local
-KIND_CLUSTER ?=
 
-.PHONY: install run-api lint type test format docker-up docker-down eval ingest-sample migrate
-.PHONY: helm-install helm-install-ollama-external helm-uninstall helm-ingest-sample
+# kind cluster to load the image into. Leave empty for other clusters.
+KIND_CLUSTER ?=
+# kubectl context to use. Set it so a target never runs against whatever
+# context happens to be current. Leave empty to use the current one.
+KUBE_CONTEXT ?=
+
+HELM_API_BASE ?= http://localhost:30080
+HELM_GRAFANA_URL ?= http://localhost:30030
+HELM_UI_URL ?= http://localhost:30081
+OLLAMA_BASE_URL ?= http://host.docker.internal:11434
+VENDOR_ID ?= vendor_123
+REQUESTS ?= 1000
+SLEEP ?= 0.01
+
+HELM_CMD := $(HELM) $(if $(KUBE_CONTEXT),--kube-context $(KUBE_CONTEXT))
+KUBECTL_CMD := $(KUBECTL) $(if $(KUBE_CONTEXT),--context $(KUBE_CONTEXT))
+
+.PHONY: install run-api lint type test format docker-up docker-down ingest-sample migrate
+.PHONY: run-evals smoke-eval eval
+.PHONY: helm-lint helm-install helm-install-ollama-external helm-uninstall helm-ingest-sample
 .PHONY: helm-urls helm-port-forward helm-renewal-brief helm-traffic helm-restart-grafana
 
 install:
@@ -31,8 +48,10 @@ type:
 test:
 	pytest
 
+# Applies the Alembic migrations to DATABASE_URL (default: the Compose Postgres on localhost:5432).
+# alembic/env.py imports the app package, which lives under src/.
 migrate:
-	$(PYTHON) scripts/migrate.py
+	PYTHONPATH=src $(PYTHON) scripts/migrate.py
 
 ingest-sample:
 	@app_id="$$($(DOCKER_COMPOSE) ps -q app)"; \
@@ -56,6 +75,12 @@ docker-up:
 docker-down:
 	$(DOCKER_COMPOSE) down
 
+# Static checks of the Helm chart. They render the templates and need no cluster.
+helm-lint:
+	$(HELM) lint charts/renewal-desk
+	$(HELM) template $(HELM_RELEASE) charts/renewal-desk > /dev/null
+	$(HELM) template $(HELM_RELEASE) charts/renewal-desk --set ingress.enabled=true > /dev/null
+
 helm-install:
 	@TIMESTAMP=$$(date +%s); \
 	echo "Building image with tag: $(IMAGE_TAG)"; \
@@ -64,7 +89,7 @@ helm-install:
 		kind load docker-image $(IMAGE_REPO):$(IMAGE_TAG) --name $(KIND_CLUSTER); \
 	fi; \
 	echo "Upgrading Helm release with timestamp annotation to force rollout..."; \
-	$(HELM) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
+	$(HELM_CMD) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
 		--namespace $(HELM_NAMESPACE) --create-namespace \
 		--set image.repository=$(IMAGE_REPO) \
 		--set image.tag=$(IMAGE_TAG) \
@@ -72,14 +97,14 @@ helm-install:
 		--set ollama.enabled=true \
 		--set-string app.deployTimestamp=$$TIMESTAMP; \
 	echo "Forcing rollout restart to use new image..."; \
-	$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE); \
-	if $(KUBECTL) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui &>/dev/null; then \
-		$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE)-ui; \
+	$(KUBECTL_CMD) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE); \
+	if $(KUBECTL_CMD) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui >/dev/null 2>&1; then \
+		$(KUBECTL_CMD) -n $(HELM_NAMESPACE) rollout restart deployment/$(HELM_RELEASE)-ui; \
 	fi; \
 	echo "Waiting for rollout to complete..."; \
-	$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE) --timeout=120s || true; \
-	if $(KUBECTL) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui &>/dev/null; then \
-		$(KUBECTL) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE)-ui --timeout=60s || true; \
+	$(KUBECTL_CMD) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE) --timeout=120s || true; \
+	if $(KUBECTL_CMD) -n $(HELM_NAMESPACE) get deployment $(HELM_RELEASE)-ui >/dev/null 2>&1; then \
+		$(KUBECTL_CMD) -n $(HELM_NAMESPACE) rollout status deployment/$(HELM_RELEASE)-ui --timeout=60s || true; \
 	fi
 
 helm-install-ollama-external:
@@ -87,7 +112,7 @@ helm-install-ollama-external:
 	@if [ -n "$(KIND_CLUSTER)" ]; then \
 		kind load docker-image $(IMAGE_REPO):$(IMAGE_TAG) --name $(KIND_CLUSTER); \
 	fi
-	$(HELM) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
+	$(HELM_CMD) upgrade --install $(HELM_RELEASE) charts/renewal-desk \
 		--namespace $(HELM_NAMESPACE) --create-namespace \
 		--set image.repository=$(IMAGE_REPO) \
 		--set image.tag=$(IMAGE_TAG) \
@@ -96,10 +121,10 @@ helm-install-ollama-external:
 		--set app.ollamaBaseUrl=$(OLLAMA_BASE_URL)
 
 helm-uninstall:
-	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+	$(HELM_CMD) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
 helm-ingest-sample:
-	$(KUBECTL) -n $(HELM_NAMESPACE) exec deploy/$(HELM_RELEASE) -- python scripts/load_samples.py
+	$(KUBECTL_CMD) -n $(HELM_NAMESPACE) exec deploy/$(HELM_RELEASE) -- python scripts/load_samples.py
 
 helm-urls:
 	@echo "API: $(HELM_API_BASE)"
@@ -110,7 +135,7 @@ helm-port-forward:
 	@echo "Starting port-forward for API (8000)."
 	@echo "API: http://localhost:8000"
 	@echo "Press Ctrl+C to stop."
-	$(KUBECTL) -n $(HELM_NAMESPACE) port-forward svc/$(HELM_RELEASE) 8000:8000
+	$(KUBECTL_CMD) -n $(HELM_NAMESPACE) port-forward svc/$(HELM_RELEASE) 8000:8000
 
 helm-renewal-brief:
 	curl -sS -X POST "$(HELM_API_BASE)/renewal-brief?vendor_id=$(VENDOR_ID)" \
@@ -127,11 +152,4 @@ helm-traffic:
 	done
 
 helm-restart-grafana:
-	$(KUBECTL) -n $(HELM_NAMESPACE) rollout restart deploy/$(HELM_RELEASE)-grafana
-HELM_API_BASE ?= http://localhost:30080
-HELM_GRAFANA_URL ?= http://localhost:30030
-HELM_UI_URL ?= http://localhost:30081
-OLLAMA_BASE_URL ?= http://host.docker.internal:11434
-VENDOR_ID ?= vendor_123
-REQUESTS ?= 1000
-SLEEP ?= 0.01
+	$(KUBECTL_CMD) -n $(HELM_NAMESPACE) rollout restart deploy/$(HELM_RELEASE)-grafana

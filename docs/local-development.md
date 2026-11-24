@@ -1,141 +1,98 @@
-# Local Development Guide
+# Local Development
 
-This guide covers two common workflows:
+Two ways to run the stack on one machine: Docker Compose, and the Helm chart on a local Kubernetes cluster such as kind. Both start the same pieces: the API, PostgreSQL with pgvector, MinIO, Prometheus, Grafana and an OpenTelemetry collector.
 
-1. Running everything via docker-compose (default).
-2. Building the API container locally and deploying it on Minikube to exercise a Kubernetes-style workflow.
+## Model server
 
-## 1. docker-compose (baseline)
+The brief generator calls Ollama when `LLM_PROVIDER=ollama`, which is the default.
+
+- **Ollama on the host (Compose).** Run `ollama serve` and `ollama pull llama3.1:8b` on the host. The app container reaches it at `http://host.docker.internal:11434`.
+- **No model.** Add `"llm_provider": "mock"` to a request body. The brief is then built from the facts extracted from the documents and no model is called.
+- **Ollama in the cluster (Helm).** `make helm-install` enables the chart's Ollama deployment. It pulls `llama3.1:8b` into a 7Gi volume and requests 1 CPU and 4Gi of memory (limits 2 CPU and 8Gi), so the cluster needs that much room.
+
+## 1. Docker Compose
+
+Prerequisites: Docker with the Compose plugin, Poetry, Python 3.11.
 
 ```bash
-make install          # poetry install
-make docker-up        # builds app image + starts Postgres, MinIO, Grafana, Prometheus, OTEL collector
-make ingest-sample    # seed `.data/vendor_123`
-make run-api          # or rely on the compose service
-curl localhost:8000/renewal-brief?vendor_id=vendor_123 -d '{"refresh": false}' -H 'Content-Type: application/json'
+make install        # poetry install
+make docker-up      # builds the app image and starts every service
+make ingest-sample  # loads the sample contract, invoices and usage for vendor_123
 ```
 
-Shutdown with `make docker-down`.
+`docker-up` runs the `migrate` service first and starts the app after it has exited successfully.
 
-## 2. Deploying on Minikube
+Request a brief:
 
-This workflow mimics a managed cluster while keeping everything on your laptop.
+```bash
+curl -sS -X POST "http://localhost:8000/renewal-brief?vendor_id=vendor_123" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": false}'
+```
 
-### Prerequisites
-- Docker / Podman
-- Minikube
-- Kubectl
-- (Optional) Helm for installing dependencies
+Stop everything with `make docker-down`.
 
-### Steps
+| Service | Port | Notes |
+| --- | --- | --- |
+| API | 8000 | OpenAPI docs at `/docs`, metrics at `/metrics` |
+| Grafana | 3000 | Dashboards are provisioned from `infra/grafana/dashboards`. The login is set in `infra/docker-compose.yml`. |
+| Prometheus | 9090 | Loads the rules in `infra/prometheus/alerts.yml` |
+| MinIO | 9000, 9001 | Started with the stack. The app stores uploads on local disk, not in MinIO. |
+| PostgreSQL | 5432 | Database `renewaldesk` |
+| OpenTelemetry collector | 4318 | OTLP over HTTP |
 
-1. **Start Minikube**
-   ```bash
-   minikube start --cpus=4 --memory=6g
-   ```
+Notes:
 
-2. **Point Docker builds at the Minikube Docker daemon**
-   ```bash
-   eval "$(minikube docker-env)"
-   ```
-   Now all `docker build` commands register images inside the Minikube cluster without pushing to an external registry.
+- The app container has no data volume. Files from `make ingest-sample` are lost when the container is recreated, so run the target again after `docker-up`.
+- To run the API on the host instead, keep the Compose services up, stop the `app` container and run `make run-api`. The database default (`localhost:5432`) matches the published port. Run `make migrate` once to create the tables. The default model address uses `host.docker.internal`, so set `LLM_BASE_URL=http://localhost:11434` when the API runs on the host.
+- `make lint`, `make type` and `make test` run Ruff, mypy and pytest through the Poetry environment.
 
-3. **Build the API image**
-   ```bash
-   docker build -t renewal-desk:dev .
-   ```
-   Confirm it exists:
-   ```bash
-   docker images | grep renewal-desk
-   ```
+### UI
 
-4. **Create supporting services**
+`ui/` is a static page that talks to the API. With the API on port 8000:
 
-   For a lightweight setup, reuse the compose services by running them outside of Minikube (Postgres, MinIO). For a fully in-cluster experience:
-   - Deploy Postgres:
-     ```bash
-     kubectl create namespace renewal
-     kubectl apply -n renewal -f infra/k8s/postgres.yaml   # create this manifest mirroring docker-compose settings
-     ```
-   - Deploy MinIO or reuse S3-compatible storage.
-   - Deploy Prometheus/Grafana via Helm or manifests (optional for v0).
+```bash
+python -m http.server 5173 -d ui
+```
 
-5. **Deploy the API + Service**
-   Example manifest (`infra/k8s/api.yaml` you can craft from this outline):
-   ```yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: renewal-desk-api
-     namespace: renewal
-   spec:
-     replicas: 1
-     selector:
-       matchLabels:
-         app: renewal-desk-api
-     template:
-       metadata:
-         labels:
-           app: renewal-desk-api
-       spec:
-         containers:
-           - name: api
-             image: renewal-desk:dev
-             imagePullPolicy: Never
-             env:
-               - name: APP_ENV
-                 value: minikube
-               - name: DATABASE_URL
-                 value: postgresql://postgres:postgres@postgres.renewal.svc.cluster.local:5432/renewaldesk
-               - name: OBJECT_STORE_BUCKET
-                 value: renewal-desk
-               - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                 value: http://otel-collector.renewal.svc.cluster.local:4318
-             ports:
-               - containerPort: 8000
-   ---
-   apiVersion: v1
-   kind: Service
-   metadata:
-     name: renewal-desk-api
-     namespace: renewal
-   spec:
-     selector:
-       app: renewal-desk-api
-     ports:
-       - name: http
-         port: 80
-         targetPort: 8000
-     type: ClusterIP
-   ```
-   Apply:
-   ```bash
-   kubectl apply -f infra/k8s/api.yaml
-   ```
+Open http://localhost:5173. The API allows that origin through CORS. `ui-react/` holds Next.js sources for a second version of the UI. It is not part of Compose or the chart.
 
-6. **Expose the service locally**
-   ```bash
-   minikube service renewal-desk-api -n renewal --url
-   ```
-   Use the returned URL to call `/health`, `/metrics`, and `/renewal-brief`.
+## 2. Helm chart on a local cluster
 
-7. **Load sample data**
-   - Easiest path: run `make ingest-sample` locally, then `kubectl cp` the `.data/vendor_123` directory into the pod, or mount a PersistentVolumeClaim and populate it via a Kubernetes job. A simple approach:
-     ```bash
-     kubectl exec -it deployment/renewal-desk-api -n renewal -- mkdir -p /app/.data
-     kubectl cp .data/vendor_123 renewal/renewal-desk-api-<pod-id>:/app/.data/vendor_123
-     ```
-   - Alternatively, hit the `/ingest` endpoint with `kubectl port-forward` or via the service URL.
+Prerequisites: Docker, Helm, kubectl and a local cluster. The examples use kind.
 
-8. **Cleanup**
-   ```bash
-   kubectl delete namespace renewal
-   minikube stop
-   ```
+```bash
+kind create cluster --name renewal
+make helm-install KIND_CLUSTER=renewal KUBE_CONTEXT=kind-renewal
+```
 
-### Tips
-- Keep manifests in `infra/k8s/` and reuse environment variables from docker-compose.
-- Use `minikube tunnel` if you expose services via LoadBalancer type.
-- For iterative dev, rebuild the image (step 3) after code changes; Minikube picks up the new image automatically because `imagePullPolicy: Never` forces local usage.
+`helm-install` builds the image, loads it into the kind cluster, installs the chart into the `renewal-desk` namespace with Ollama enabled and restarts the deployments so they pick up the new image. Setting `KUBE_CONTEXT` makes every `helm` and `kubectl` call in the Makefile use that context instead of whichever one is current. Leave `KIND_CLUSTER` empty for a cluster that does not need the image loaded.
 
-This workflow mirrors what you'd do on a managed cluster (EKS/GKE) but keeps the entire experience on your laptop, making it interview-demo friendly.
+Load the sample data and request a brief:
+
+```bash
+make helm-ingest-sample KUBE_CONTEXT=kind-renewal
+make helm-renewal-brief
+```
+
+`helm-renewal-brief` calls the API at `http://localhost:30080`. The service uses NodePorts, which kind does not publish to the host unless the cluster was created with matching port mappings. Without them, run `make helm-port-forward` (API on http://localhost:8000) and pass `HELM_API_BASE=http://localhost:8000` to `helm-renewal-brief`.
+
+| Service | NodePort | Note |
+| --- | --- | --- |
+| API | 30080 | |
+| Grafana | 30030 | |
+| UI | 30081 | nginx serving `ui/`, with the API address from `ui.apiBaseUrl` |
+
+`make helm-urls` prints these addresses.
+
+Other targets:
+
+| Target | Use |
+| --- | --- |
+| `make helm-lint` | `helm lint` and a render of the templates, with and without the ingress. Needs no cluster. |
+| `make helm-install-ollama-external` | Installs without the in-cluster Ollama and points the app at `OLLAMA_BASE_URL` (default `http://host.docker.internal:11434`). |
+| `make helm-restart-grafana` | Restarts Grafana after a dashboard change. |
+| `make helm-traffic REQUESTS=200` | Sends repeated brief requests so the dashboards have data. |
+| `make helm-uninstall` | Removes the release. |
+
+The chart mounts `emptyDir` volumes for uploaded files, so they are lost when the pod is replaced. Run `make helm-ingest-sample` again after a restart. Chart values are in `charts/renewal-desk/values.yaml`. The Prometheus in the chart scrapes the app but has no alert rules.

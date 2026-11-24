@@ -3,7 +3,7 @@ groups:
     interval: 30s
     rules:
       - alert: HighLatency
-        expr: histogram_quantile(0.95, api_request_latency_seconds_bucket) > 5
+        expr: histogram_quantile(0.95, sum by (le) (rate(api_request_latency_seconds_bucket[5m]))) > 5
         for: 5m
         labels:
           severity: warning
@@ -12,7 +12,7 @@ groups:
           description: "P95 latency is {{ $value }}s (threshold: 5s)"
 
       - alert: HighErrorRate
-        expr: rate(api_requests_total{status=~"5.."}[5m]) / rate(api_requests_total[5m]) > 0.01
+        expr: sum(rate(api_requests_total{status=~"5.."}[5m])) / sum(rate(api_requests_total[5m])) > 0.01
         for: 5m
         labels:
           severity: critical
@@ -39,8 +39,8 @@ groups:
           description: "LLM error rate is {{ $value }} errors/sec"
 
       - alert: BudgetExceeded
-        expr: rate(llm_errors_total{reason="budget_exceeded"}[1h]) > 0
-        for: 1h
+        expr: increase(llm_errors_total{reason="budget_exceeded"}[1h]) > 0
+        for: 1m
         labels:
           severity: warning
         annotations:

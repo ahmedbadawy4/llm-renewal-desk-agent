@@ -1,0 +1,5 @@
+# Copy to backend.hcl (ignored by git) and fill in an S3 bucket you own.
+# Then run: terraform init -backend-config=backend.hcl
+bucket = "<your-terraform-state-bucket>"
+key    = "renewal-desk/terraform.tfstate"
+region = "us-east-1"

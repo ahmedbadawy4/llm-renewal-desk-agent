@@ -2,168 +2,117 @@
 
 [![CI](https://github.com/ahmedbadawy4/llm-renewal-desk-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/ahmedbadawy4/llm-renewal-desk-agent/actions/workflows/ci.yml)
 
-Production-grade LLM decision-support agent for SaaS vendor renewals. Automates the analysis of contracts, invoices, and usage data to generate structured renewal briefs with citations, risk assessments, and negotiation strategies.
+A prototype LLM agent for SaaS vendor renewals. It reads a vendor contract (PDF), invoices (CSV) and a usage export (CSV) and returns a structured renewal brief: renewal terms, pricing, usage, risk flags, a negotiation plan and a draft email. Every section carries citations, and a section without a citation is blanked instead of being passed on.
 
-## Overview
+The repository is a reference build. It shows how to put guardrails, observability, packaging and delivery around an LLM call. It is not a finished product, and the [Design limits](#design-limits) section lists what is simplified.
 
-The Renewal Desk Agent is an AI-powered system that helps renewal operations teams quickly analyze vendor contracts and generate actionable renewal briefs. It combines:
+## What it does
 
-- **Document Processing**: Ingests PDF contracts, CSV invoices, and usage exports
-- **Intelligent Retrieval**: Extracts key terms, pricing, and usage patterns
-- **LLM-Powered Analysis**: Synthesizes findings into structured renewal briefs
-- **Production Guardrails**: Prompt injection detection, schema validation, citation enforcement
-- **Full Observability**: Prometheus metrics, OpenTelemetry traces, Grafana dashboards
+1. **Ingest.** `POST /ingest` stores the files per vendor, encrypts the text and CSV files at rest and queues a background job per file. The job parses the PDF with PyMuPDF, then chunks and embeds the text into pgvector.
+2. **Extract.** Regular expressions pull the deterministic facts out of the contract text: term dates, notice window, price, uplift percentage, licensed seats, liability cap. Invoices and usage are summarised with plain Python.
+3. **Check the input.** A weighted, pattern-based classifier scans the contract text for prompt injection. A hit stops the request before any model call and answers with an error.
+4. **Synthesise.** Ollama receives the extracted facts and the evidence and must answer in JSON that matches the `RenewalBriefSynthesis` schema. A daily budget check runs first.
+5. **Validate.** Pydantic enforces the schema (`extra="forbid"`). Every populated section needs a citation. A section without one is blanked (fail closed) and the citation coverage is recorded.
+6. **Fall back.** If the model is unreachable, over budget or returns invalid JSON, the brief is built from the extracted facts alone.
 
-### What It Does
+## What is in the repository
 
-The system processes vendor renewal data through a multi-stage pipeline:
+| Area | What exists |
+| --- | --- |
+| API | FastAPI app with ingestion, brief generation, batch, job status, health, metrics and debug trace endpoints |
+| Agent | Runner, Pydantic schemas, citation validators, injection classifier, prompt template |
+| LLM access | Ollama client and a model router with retry and backoff (3 attempts) and a circuit breaker per provider (opens after 5 failures, retries after 60 s) |
+| Retrieval | PDF parsing, chunking, sentence-transformers embeddings, pgvector store, hybrid search (vector similarity plus PostgreSQL full-text rank) |
+| Storage | Local filesystem object store with a per-vendor manifest, PostgreSQL for vectors, jobs and debug traces, five Alembic migrations |
+| Observability | Prometheus metrics, OpenTelemetry traces through a collector, two Grafana dashboards, Prometheus alert rules |
+| Packaging | Dockerfile, Docker Compose stack, Helm chart for a local Kubernetes cluster |
+| Delivery | GitHub Actions for lint, types, tests, eval smoke, chart and Terraform checks and image build; a manual deploy workflow for ECS |
+| Infrastructure as code | Terraform for AWS: VPC, ALB, ECS Fargate, RDS PostgreSQL and S3 |
+| Evaluation | Eval harness with golden cases, cost and latency budgets, tolerance bands and a regression check |
+| UI | A static page in `ui/` and Next.js sources in `ui-react/` |
 
-1. **Ingestion**: Uploads contract PDFs, invoice CSVs, and usage data via `/ingest` endpoint
-2. **Document Processing**: Parses PDFs to extract text and tables, processes CSVs for financial data
-3. **Field Extraction**: Uses regex patterns and deterministic parsing to extract structured facts (term dates, pricing, seat counts)
-4. **LLM Synthesis**: Sends pre-extracted facts and raw evidence to an LLM (Ollama or OpenAI) to generate insights
-5. **Validation**: Enforces strict schema compliance and requires citations for all claims
-6. **Response Assembly**: Returns a structured `RenewalBrief` with renewal terms, pricing analysis, usage insights, risk flags, negotiation plan, and draft email
+## Quick start
 
-### Key Features
+### Docker Compose
 
-- **Structured Output**: Pydantic-validated JSON responses with strict schema enforcement
-- **Citation Enforcement**: Every claim must have source citations; missing citations trigger repair or fail-closed behavior
-- **AI Safety**: Multi-layer guardrails including prompt injection detection, budget controls, and token limits
-- **Reliability**: Fallback heuristics ensure the system works even when LLM calls fail
-- **Observability**: Comprehensive metrics, traces, and debug endpoints for production monitoring
-- **Flexible Deployment**: Docker Compose for local development, Helm charts for Kubernetes
-
-## Quick Start
-
-### Option A: Docker Compose (Fastest)
-
-1. **Start the stack**
-   ```bash
-   make docker-up
-   ```
-
-2. **Ensure Ollama is running locally**
-   ```bash
-   ollama serve
-   ollama pull llama3.1:8b
-   ```
-
-3. **Ingest sample data**
-   ```bash
-   make ingest-sample
-   ```
-
-4. **Generate a renewal brief**
-   ```bash
-   curl -sS -X POST "http://localhost:8000/renewal-brief?vendor_id=vendor_123" \
-     -H "Content-Type: application/json" \
-     -d '{"refresh": false}' | python -m json.tool
-   ```
-
-5. **View metrics in Grafana** at http://localhost:3000
-
-### Option B: Helm (Kubernetes)
-
-Requires a local Kubernetes cluster (Docker Desktop, minikube, or kind).
-
-1. **Install the stack**
-   ```bash
-   make helm-install
-   ```
-
-2. **Ingest sample data**
-   ```bash
-   make helm-ingest-sample
-   ```
-
-3. **Generate a renewal brief**
-   ```bash
-   make helm-renewal-brief
-   ```
-
-4. **View metrics in Grafana** at http://localhost:30030
-
-If your cluster doesn't expose NodePorts, use port-forward:
 ```bash
-make helm-port-forward
+make docker-up          # app, PostgreSQL, MinIO, Prometheus, Grafana, OTel collector
+make ingest-sample      # load the bundled example files for vendor_123
 ```
+
+The default provider is Ollama on the host (`http://host.docker.internal:11434`):
+
+```bash
+ollama serve
+ollama pull llama3.1:8b
+```
+
+Ask for a brief:
+
+```bash
+curl -sS -X POST "http://localhost:8000/renewal-brief?vendor_id=vendor_123" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh": false}' | python -m json.tool
+```
+
+Grafana runs on http://localhost:3000 and Prometheus on http://localhost:9090.
+
+### Helm on a local Kubernetes cluster
+
+```bash
+make helm-install            # builds the image, installs the chart with Ollama inside the cluster
+make helm-ingest-sample
+make helm-renewal-brief
+```
+
+`make helm-install-ollama-external` uses an Ollama that runs on the host instead. Grafana is on http://localhost:30030 and the UI on http://localhost:30081. If the cluster does not expose NodePorts, run `make helm-port-forward`.
+
+For kind, load the image into the cluster by name: `make helm-install KIND_CLUSTER=<name>`. To pin the Helm and kubectl commands to one context, add `KUBE_CONTEXT=<context>`.
 
 ## Architecture
 
-### System Components
-
-- **FastAPI Application** (`src/app/main.py`): REST API with endpoints for ingestion and brief generation
-- **Agent Runner** (`src/app/agent/runner.py`): Orchestrates document retrieval, extraction, LLM synthesis, and validation
-- **Document Processing** (`src/app/storage/pdf_parser.py`): PDF parsing with pymupdf for text and table extraction
-- **Storage Layer** (`src/app/storage/object_store.py`): Local filesystem storage with manifest tracking
-- **LLM Integration** (`src/app/llm/ollama.py`, `src/app/llm/router.py`): Multi-provider LLM routing with retry and circuit breaker logic
-- **Observability** (`src/app/core/metrics.py`, `src/app/core/tracing.py`): Prometheus metrics and OpenTelemetry distributed tracing
-
-### Request Flow
-
-1. **API Request** → FastAPI receives POST to `/renewal-brief` with `vendor_id`
-2. **Document Retrieval** → Loads contract, invoices, and usage files from object store
-3. **Input Sanitization** → Scans for prompt injection patterns before LLM interaction
-4. **Field Extraction** → Regex-based extraction of contract terms, invoice aggregation, usage calculations
-5. **Budget Check** → Validates daily budget before LLM call
-6. **Prompt Construction** → Builds constrained prompt with system instructions, schema examples, and evidence
-7. **LLM Call** → Sends to Ollama/OpenAI with timeout and token limits
-8. **JSON Extraction** → Parses LLM response, handles markdown-wrapped JSON
-9. **Schema Validation** → Pydantic validation enforces types and structure
-10. **Citation Validation** → Ensures all populated fields have citations; repairs if missing
-11. **Response Assembly** → Builds final `RenewalBrief` with all sections
-12. **Metrics & Tracing** → Records Prometheus metrics and debug traces
-
-### AI Control Mechanisms
-
-The system implements multiple layers to ensure reliable, auditable outputs:
-
-1. **Input Sanitization**: Prompt injection detection blocks malicious input before LLM interaction
-2. **Constrained Prompting**: System prompts define strict role and output format requirements
-3. **Output Validation**: Pydantic schemas enforce structure; `extra="forbid"` prevents unexpected fields
-4. **Citation Enforcement**: Every claim must have source citations; missing citations trigger repair or fail-closed behavior
-5. **Budget & Token Limits**: Daily budget tracking, output token caps, and request timeouts prevent runaway costs
-6. **Fallback Heuristics**: Deterministic extraction and template-based generation when LLM fails
-
-See `TECHNICAL_README.md` for detailed code-level documentation.
-
-## API Reference
-
-### POST `/ingest`
-
-Uploads contract, invoice, and usage files for a vendor.
-
-**Parameters:**
-- `vendor_id` (query): Vendor identifier
-- `contract` (form-data): PDF contract file
-- `invoices` (form-data): CSV invoice file
-- `usage` (form-data): CSV usage file
-
-**Response:**
-```json
-{
-  "status": "accepted",
-  "vendor_id": "vendor_123",
-  "message": "Ingestion scheduled",
-  "job_ids": ["uuid-1", "uuid-2", "uuid-3"],
-  "files": {
-    "contract": "/data/vendor_123/contract_sample_contract.pdf",
-    "invoices": "/data/vendor_123/invoices_invoices.csv",
-    "usage": "/data/vendor_123/usage_usage.csv"
-  }
-}
+```text
+ client / UI
+     |
+     v
+ FastAPI ──> rate limit, metrics middleware
+     |
+     |  POST /ingest ──> object store (local files, encrypted) ──> job queue ──> parse, chunk, embed ──> pgvector
+     |
+     |  POST /renewal-brief
+     v
+ agent runner
+     1. read stored contract, invoices, usage
+     2. injection classifier ──(hit)──> error, no model call
+     3. regex extraction and CSV summaries
+     4. daily budget check
+     5. model router ──> Ollama (retry, circuit breaker)
+     6. schema and citation validation, fail closed
+     7. fallback to the extracted facts when step 5 fails
+     8. cache, metrics, debug trace (PostgreSQL)
 ```
 
-### POST `/renewal-brief`
+More detail is in [docs/architecture.md](docs/architecture.md) and [docs/data-flow.md](docs/data-flow.md).
 
-Generates a renewal brief for a vendor.
+## API
 
-**Parameters:**
-- `vendor_id` (query): Vendor identifier
-- `refresh` (body, optional): Force refresh (ignore cache)
+| Method and path | Purpose |
+| --- | --- |
+| `POST /ingest?vendor_id=` | Upload `contract`, `invoices` and `usage` as form files. Returns `202` with the job ids and the stored file paths. The vendor id is 1 to 64 letters, digits, `_`, `-` or `.`, starting with a letter or digit, and anything else gets `400` |
+| `GET /jobs`, `GET /jobs/{job_id}` | Status of the background processing jobs |
+| `POST /renewal-brief?vendor_id=` | Generate a brief |
+| `POST /renewal-brief/batch` | Generate briefs for a JSON array of vendor ids |
+| `GET /demo/renewal-brief` | Generate a brief from the bundled example files |
+| `GET /health` | Liveness |
+| `GET /llm/health` | Reachability of the configured LLM endpoint |
+| `GET /metrics` | Prometheus metrics |
+| `GET /debug/trace/{request_id}` | Stored trace of one request |
+| `GET /debug/traces`, `GET /debug/traces/export` | Search and export stored traces |
 
-**Response:**
+The body of `POST /renewal-brief` accepts `refresh` (skip the cache) and optional `llm_provider` (`mock` or `ollama`), `ollama_base_url` and `ollama_model` for a single request.
+
+An abridged response:
+
 ```json
 {
   "status": "ok",
@@ -177,270 +126,161 @@ Generates a renewal brief for a vendor.
       "auto_renew": true,
       "citations": [{"doc_id": "contract.pdf", "page": 2, "span": "TERM"}]
     },
-    "pricing": {
-      "annual_spend_usd": 120000,
-      "uplift_clause_pct": 5,
-      "citations": [{"doc_id": "invoices.csv", "span": "PRICING"}]
-    },
-    "usage": {
-      "allocated_seats": 500,
-      "active_seats": 475,
-      "delta_percent": -5.0,
-      "citations": [{"doc_id": "usage.csv", "span": "USAGE"}]
-    },
-    "risk_flags": {
-      "auto_renew_soon": true,
-      "liability_cap_multiple": 2,
-      "dpa_status": "present",
-      "pii_risk": "low",
-      "citations": [{"doc_id": "contract.pdf", "span": "RISK"}]
-    },
-    "negotiation_plan": {
-      "target_discount_pct": 10,
-      "walkaway_delta_pct": 15,
-      "levers": ["Usage below contracted seats"],
-      "citations": [{"doc_id": "contract.pdf", "span": "NEGOTIATION"}]
-    },
-    "draft_email": {
-      "subject": "vendor_123 renewal discussion",
-      "body": "Hi vendor_123 team,\n\nWe're preparing for the upcoming renewal..."
-    }
+    "pricing": {"annual_spend_usd": 120000, "uplift_clause_pct": 5, "citations": [{"doc_id": "invoices.csv", "span": "PRICING"}]},
+    "usage": {"allocated_seats": 500, "active_seats": 475, "delta_percent": -5.0, "citations": [{"doc_id": "usage.csv", "span": "USAGE"}]},
+    "risk_flags": {"auto_renew_soon": true, "liability_cap_multiple": 2, "dpa_status": "present", "pii_risk": "low", "citations": [{"doc_id": "contract.pdf", "span": "RISK"}]},
+    "negotiation_plan": {"target_discount_pct": 10, "walkaway_delta_pct": 15, "levers": ["Usage below contracted seats"], "citations": [{"doc_id": "contract.pdf", "span": "NEGOTIATION"}]},
+    "draft_email": {"subject": "vendor_123 renewal discussion", "body": "Hi vendor_123 team, ..."}
   }
 }
 ```
 
-### GET `/jobs`
+## Guardrails
 
-Lists async processing jobs for a vendor.
-
-**Parameters:**
-- `vendor_id` (query, optional): Filter by vendor
-
-### GET `/jobs/{job_id}`
-
-Gets status of a specific async job.
-
-### GET `/debug/trace/{request_id}`
-
-Retrieves debug trace for a renewal brief request.
-
-### GET `/demo/renewal-brief`
-
-Generates a brief using bundled sample files (no ingestion required).
+- **Injection check before the model.** Weighted regular-expression categories, score threshold 0.5. A hit raises an error and records an `injection_detected` metric and trace.
+- **Constrained output.** One system prompt, a JSON-only answer and a strict Pydantic schema.
+- **Citations or nothing.** A section without citations is blanked and counted in `citation_coverage_ratio`.
+- **Budget and limits.** A daily spend estimate (`DAILY_BUDGET_USD`), an output token cap and a request timeout. Requests are limited to 100 per 60 seconds per client address and path (`RATE_LIMIT_MAX_REQUESTS`, `RATE_LIMIT_WINDOW_SECONDS`).
+- **Path checks.** Vendor ids and uploaded file names cannot leave the vendor's folder under `DATA_DIR`.
+- **Encryption at rest.** Uploaded `.txt` and `.csv` files are encrypted with a Fernet key taken from `ENCRYPTION_KEY` and decrypted when the brief and the indexer read them. PDFs and the data derived from them are not encrypted. Without the variable a fixed demo key from the source is used, which protects nothing.
+- **Deterministic fallback.** The brief is still produced from the extracted facts when the model fails.
 
 ## Observability
 
-### Grafana Dashboard
+Main metrics at `/metrics`:
 
-The system includes pre-configured Grafana dashboards showing:
+| Metric | Type |
+| --- | --- |
+| `api_requests_total` (`path`, `method`, `status`) | counter |
+| `api_request_latency_seconds` (`path`, `method`) | histogram |
+| `agent_requests_total` (`status`) | counter |
+| `agent_tokens_total`, `llm_tokens_total` (`direction`) | counter |
+| `llm_errors_total` (`reason`) | counter |
+| `validation_failures_total` (`stage`) | counter |
+| `citation_coverage_ratio` | gauge |
+| `llm_request_latency_seconds` (`provider`) | histogram |
+| `renewal_briefs_generated_total` (`vendor_id`) | counter |
 
-- **Request Rate**: API call volume over time
-- **Latency (p95)**: Tail latency for API responses
-- **Error Rate**: Server error percentage
-- **Agent Status**: Success vs failure counts
-- **Token Usage**: Input/output token counters
-- **LLM Errors**: LLM call failures, schema issues, budget overruns
-- **Validation Failures**: Schema or citation validation drops
-- **Citation Coverage**: Percentage of sections with citations
+Traces go to the OpenTelemetry collector over OTLP. Each brief also stores a debug trace in the `debug_traces` table with the document ids, token counts, validation result and citation coverage.
+
+The Compose stack loads [infra/prometheus/alerts.yml](infra/prometheus/alerts.yml): high latency, high error rate, low citation coverage, LLM provider failures and an exceeded budget. Grafana loads the dashboards in `infra/grafana/dashboards`.
 
 ![Grafana Renewal Desk dashboard](docs/assets/grafana-chart.png)
 
-### Prometheus Metrics
-
-Metrics are exposed at `/metrics` endpoint:
-
-- `api_requests_total`: HTTP request counter
-- `api_request_latency_seconds`: Request latency histogram
-- `agent_requests_total`: Renewal brief counter by status
-- `agent_tokens_total`: Token usage counter
-- `llm_errors_total`: LLM error counter
-- `validation_failures_total`: Validation failure counter
-- `citation_coverage_ratio`: Citation coverage gauge
-
-### Debug Traces
-
-Each request generates a debug trace accessible via `/debug/trace/{request_id}` containing:
-
-- Retrieved document IDs
-- Tool calls invoked
-- Token counts (input/output/total)
-- Validation outcomes
-- Citation coverage
-
 ## UI
 
-A lightweight web UI is included for testing and demos:
+`ui/` is a static page that talks to the API. Start the API with `make run-api`, then:
 
-1. **Run the API**
-   ```bash
-   make run-api
-   ```
+```bash
+python -m http.server 5173 -d ui
+```
 
-2. **Serve the UI**
-   ```bash
-   python -m http.server 5173 -d ui
-   ```
-
-3. **Open** http://localhost:5173
-
-The UI includes file upload, brief generation, and debug trace viewing.
+Open http://localhost:5173. It uploads files, requests a brief and shows the debug trace. `ui-react/` holds Next.js sources for a second version of the UI; see its `package.json` for the scripts.
 
 ![Renewal Desk UI sample](docs/assets/ui-sample.png)
 
 ## Development
 
-### Local Setup
-
-1. **Install dependencies**
-   ```bash
-   pipx install poetry  # optional
-   make install
-   ```
-
-2. **Run API locally**
-   ```bash
-   make run-api
-   ```
-
-3. **Run tests**
-   ```bash
-   make test
-   ```
-
-4. **Run evaluations**
-   ```bash
-   make eval
-   ```
-
-### Project Structure
-
-```
-src/app/
-  ├── main.py              # FastAPI application entry point
-  ├── api/routes.py        # API endpoint definitions
-  ├── agent/
-  │   ├── runner.py        # Core agent orchestration
-  │   ├── schemas.py       # Pydantic models
-  │   ├── safety.py        # Prompt injection detection
-  │   ├── validators.py    # Citation validation
-  │   └── prompts/         # LLM prompt templates
-  ├── llm/
-  │   ├── ollama.py        # Ollama client
-  │   ├── openai.py        # OpenAI client
-  │   └── router.py        # Multi-provider routing
-  ├── storage/
-  │   ├── object_store.py  # File storage abstraction
-  │   ├── pdf_parser.py    # PDF parsing
-  │   ├── vector_store.py # pgvector integration
-  │   └── postgres.py      # Database connection
-  ├── rag/
-  │   ├── retrieval.py     # Document retrieval
-  │   ├── hybrid_search.py # Hybrid vector + BM25 search
-  │   └── embeddings.py    # Sentence transformer embeddings
-  ├── core/
-  │   ├── config.py         # Application settings
-  │   ├── metrics.py       # Prometheus metrics
-  │   ├── tracing.py       # OpenTelemetry
-  │   └── debug.py         # Debug trace store
-  └── workers/
-      ├── parser.py        # Async document processing
-      └── job_queue.py     # Job queue management
+```bash
+make install        # poetry install
+make run-api        # uvicorn with reload
+make lint           # ruff
+make type           # mypy
+make test           # pytest
+make eval           # eval harness with the golden cases
+make smoke-eval     # loads the eval cases and writes the report, does not run the agent
+make helm-lint      # lint and render the Helm chart
 ```
 
-### Configuration
+Configuration comes from environment variables (a `.env` file is read too):
 
-Key environment variables:
-
-- `LLM_PROVIDER`: `ollama` (default) or `openai`
-- `LLM_BASE_URL`: Ollama API endpoint (default: `http://host.docker.internal:11434`)
-- `LLM_MODEL`: Model name (default: `llama3.1:8b`)
-- `MAX_OUTPUT_TOKENS`: Output token limit (default: `800`)
-- `REQUEST_TIMEOUT_S`: LLM call timeout (default: `30`)
-- `DAILY_BUDGET_USD`: Daily spending limit (default: `1.0`)
-- `DATABASE_URL`: PostgreSQL connection string
-- `DATA_DIR`: Storage directory (default: `.data`)
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `ollama` | `ollama` calls the model. Any other value, such as `mock`, skips the model and uses the extracted facts |
+| `LLM_BASE_URL` | `http://host.docker.internal:11434` | Ollama endpoint |
+| `LLM_MODEL` | `llama3.1:8b` | Ollama model |
+| `MAX_OUTPUT_TOKENS` | `800` | Output token cap |
+| `REQUEST_TIMEOUT_S` | `30` | Timeout of one model call |
+| `DAILY_BUDGET_USD` | `1.0` | Daily spend estimate limit, `0` turns it off |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/renewaldesk` | PostgreSQL connection string |
+| `DATA_DIR` | `.data` | Where uploaded files are stored |
+| `ENCRYPTION_KEY` | unset (demo key) | Fernet key for uploaded `.txt` and `.csv` files. Create one with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `RATE_LIMIT_MAX_REQUESTS` | `100` | Requests allowed per window and client address and path |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Length of the rate-limit window |
+| `CORS_ORIGINS` | local UI ports | Allowed origins |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | unset | Registers the OpenAI client in the router (see Design limits) |
 
 ## Deployment
 
-### Docker Compose
+**Docker Compose** (`infra/docker-compose.yml`) runs the app with PostgreSQL, MinIO, Prometheus, Grafana and the OpenTelemetry collector. The credentials in it are local demo values.
 
-Full stack with PostgreSQL, Prometheus, Grafana, and OpenTelemetry collector:
-
-```bash
-make docker-up
-```
-
-### Helm (Kubernetes)
-
-Deploy to Kubernetes with Helm:
-
-```bash
-make helm-install
-```
-
-The Helm chart includes:
-- Application deployment with configurable replicas
-- PostgreSQL with pgvector extension
-- Prometheus for metrics collection
-- Grafana with pre-configured dashboards
-- OpenTelemetry collector
-- Optional Ollama deployment
-- UI service (NodePort)
-
-For kind clusters:
-```bash
-make helm-install KIND_CLUSTER=your-cluster
-```
-
-### Ingress (Optional)
-
-Enable ingress for API and UI:
+**Helm** (`charts/renewal-desk`) installs the app, UI, PostgreSQL, Prometheus, Grafana, the OpenTelemetry collector, MinIO and optionally Ollama. It is a demo stack for a local cluster: it uses NodePort services and demo database credentials, so do not install it on a shared cluster as it is. Ingress is optional:
 
 ```bash
 helm upgrade --install renewal-desk charts/renewal-desk \
+  --namespace renewal-desk --create-namespace \
   --set ingress.enabled=true \
-  --set ingress.className=nginx \
-  --set ingress.hosts[0].host=renewal-desk.local \
-  --set ingress.hosts[1].host=renewal-desk-api.local
+  --set ingress.className=nginx
 ```
+
+**AWS** (`infra/terraform`) defines a VPC, an Application Load Balancer, an ECS Fargate service, RDS PostgreSQL and an S3 bucket. [infra/terraform/README.md](infra/terraform/README.md) has the variables and the backend setup. `.github/workflows/deploy.yml` is a manual workflow that builds the image, pushes it to ECR and updates the ECS service.
+
+## Pipeline
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main` and on pull requests:
+
+| Job | Steps |
+| --- | --- |
+| `build-and-test` | Ruff, mypy, pytest, eval smoke, Gitleaks, Docker build |
+| `helm` | `helm lint` and `helm template` of the chart, with and without ingress |
+| `terraform` | `terraform fmt -check` and `terraform validate` without a backend |
 
 ## Troubleshooting
 
-- **Grafana empty**: Generate traffic with `make helm-traffic REQUESTS=10 SLEEP=1`
-- **Cannot access NodePorts**: Use port-forward (`make helm-port-forward`)
-- **Reset state**: `docker compose -f infra/docker-compose.yml down -v` and remove `.data`
-- **Migration pod failing**: Check PostgreSQL connectivity and ensure pgvector extension is enabled
+- **Grafana is empty.** Generate traffic: `make helm-traffic REQUESTS=10 SLEEP=1`.
+- **NodePorts are not reachable.** Use `make helm-port-forward`.
+- **Reset the Compose state.** `docker compose -f infra/docker-compose.yml down -v` and remove `.data`.
+- **Migration pod fails.** Check the PostgreSQL connection and that the pgvector extension can be created.
 
-## Cleanup
+## Design limits
 
-```bash
-make helm-uninstall
-docker compose -f infra/docker-compose.yml down -v
-rm -rf .data
-```
+- **Retrieval is not on the brief path.** Documents are chunked, embedded and stored in pgvector at ingestion, and `rag/retrieval.py` implements the hybrid search, but the runner reads the extracted text directly. Hooking the search into the runner is the next step for long contracts.
+- **Hybrid search ranks with PostgreSQL full-text rank, not BM25.** The vector score has weight 0.7 and a simple rerank follows. When the vector store is off, a placeholder result is returned.
+- **One model in practice.** The router has an OpenAI client and selection rules, but the runner always asks for standard quality and only calls the router when `LLM_PROVIDER=ollama`, so Ollama serves every request. The per-request override accepts `mock` or `ollama`.
+- **Extraction is pattern based.** The regular expressions match the sentence forms of the example contract. Other contract wording needs new patterns or the model.
+- **State is per process.** The daily budget tracker, the response cache (one hour) and the rate limiter live in memory, so they reset on restart and are not shared between replicas.
+- **Files stay on local disk.** The object store writes to `DATA_DIR`. MinIO and the S3 bucket are provisioned, but the application does not use them yet.
+- **Injection detection is pattern based.** It catches known phrasing and is one layer, not a complete defence.
+- **Present but not connected.** The repository has API-key authentication (`core/auth.py`), PII detection (`core/pii_detection.py`), A/B experiment helpers (`core/experiments.py`) and a tool allowlist gateway (`tools/`). None of them is wired into the API routes yet.
+- **Local demo defaults.** The container runs as root, the chart and Compose files carry demo database credentials, and the Terraform root passes the database URL to the task as an environment value.
+- **PDF input is text only.** Scanned PDFs without a text layer produce no contract text.
 
 ## Documentation
 
-- `TECHNICAL_README.md`: Detailed code-level documentation and architecture
-- `docs/architecture.md`: System architecture and component diagrams
-- `docs/data-flow.md`: End-to-end request flow
-- `docs/local-development.md`: Local development setup
-- `docs/runbook.md`: Operations and incident procedures
-- `docs/threat-model.md`: Security posture and threat analysis
+- [docs/architecture.md](docs/architecture.md): components and what is built
+- [docs/data-flow.md](docs/data-flow.md): ingestion and brief request step by step
+- [docs/local-development.md](docs/local-development.md): Compose and Helm workflows
+- [docs/evals.md](docs/evals.md): the eval harness
+- [docs/runbook.md](docs/runbook.md): operating the stack
+- [docs/threat-model.md](docs/threat-model.md): risks and which mitigations exist
 
 ## Roadmap
 
-- [x] PDF parsing with pymupdf and table extraction
-- [x] Hybrid retrieval with pgvector and BM25
-- [x] Multi-model routing (Ollama, OpenAI)
-- [x] Async document processing with job queue
+- [x] PDF parsing with PyMuPDF
+- [x] Embeddings and pgvector indexing at ingestion
+- [x] Hybrid search implementation (vector plus PostgreSQL full-text rank)
+- [x] Ollama routing with retry and circuit breaker
+- [x] Background document processing with a job queue
 - [x] Database migrations with Alembic
-- [x] Enhanced evaluation harness with budgets and regression detection
-- [ ] Terraform modules for AWS deployment (ECS, RDS, OpenSearch)
-- [ ] React/Next.js UI with Slack integration
-- [ ] Advanced PDF parsing with OCR support
-- [ ] Multi-tenant RBAC and audit logging
+- [x] Eval harness with budgets, tolerance bands and a regression check
+- [x] Terraform for VPC, ALB, ECS, RDS and S3
+- [x] Next.js UI sources
+- [ ] Use hybrid search in the brief path
+- [ ] Read and write files through S3 or MinIO
+- [ ] Connect authentication and per-tenant limits to the routes
+- [ ] Route to the OpenAI client by quality and budget
+- [ ] OCR for scanned PDFs
 
 ## License
 
-See [LICENSE](LICENSE) file for details.
+Apache License 2.0, see [LICENSE](LICENSE).

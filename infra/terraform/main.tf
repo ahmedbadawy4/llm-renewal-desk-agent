@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.5"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -7,11 +7,10 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket = "renewal-desk-terraform-state"
-    key    = "renewal-desk/terraform.tfstate"
-    region = "us-east-1"
-  }
+  # Partial configuration: the bucket, key and region of the state are passed
+  # at init time (see backend.hcl.example and the README), so no account
+  # specific names live in the code.
+  backend "s3" {}
 }
 
 provider "aws" {

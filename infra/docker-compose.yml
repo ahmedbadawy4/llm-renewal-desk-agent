@@ -1,9 +1,42 @@
-version: "3.9"
+# Local stack: app, PostgreSQL with pgvector, MinIO, Prometheus, Grafana and the
+# OpenTelemetry collector. The credentials below are demo values for a laptop.
+# Start it from the repository root with `make docker-up`.
+
+x-app-build: &app-build
+  build: ..
+  image: renewal-desk:compose
+  working_dir: /app
 
 services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: renewaldesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d renewaldesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Runs the Alembic migrations once and exits. The app starts after it succeeded.
+  migrate:
+    <<: *app-build
+    command: ["python", "scripts/migrate.py"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/renewaldesk
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   app:
-    build: ..
-    working_dir: /app
+    <<: *app-build
     environment:
       APP_ENV: local
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/renewaldesk
@@ -17,28 +50,24 @@ services:
       DAILY_BUDGET_USD: 1.0
     ports:
       - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - postgres
-      - minio
-      - otel-collector
-
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_DB: renewaldesk
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
+      otel-collector:
+        condition: service_started
 
   minio:
-    image: quay.io/minio/minio:latest
+    image: quay.io/minio/minio:RELEASE.2024-05-10T01-41-38Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ACCESS_KEY: renewaldesk
-      MINIO_SECRET_KEY: renewaldesk123
+      MINIO_ROOT_USER: renewaldesk
+      MINIO_ROOT_PASSWORD: renewaldesk123
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -71,6 +100,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
 
 volumes:
   postgres-data:

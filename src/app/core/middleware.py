@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from fastapi import HTTPException, Request, Response, status
+from fastapi import Request, Response, status
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import metrics
@@ -42,9 +43,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         identifier = f"{client_ip}:{request.url.path}"
 
         if not self.rate_limiter.is_allowed(identifier):
-            raise HTTPException(
+            # Return the response instead of raising: an HTTPException raised
+            # inside BaseHTTPMiddleware is not handled by FastAPI's exception
+            # handlers and would surface as a 500.
+            return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded",
+                content={"detail": "Rate limit exceeded"},
             )
 
         return await call_next(request)

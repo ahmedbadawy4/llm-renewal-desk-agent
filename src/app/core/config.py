@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     max_output_tokens: int = Field(default=800, validation_alias="MAX_OUTPUT_TOKENS")
     request_timeout_s: float = Field(default=30.0, validation_alias="REQUEST_TIMEOUT_S")
     daily_budget_usd: float = Field(default=1.0, validation_alias="DAILY_BUDGET_USD")
+    rate_limit_max_requests: int = Field(default=100, validation_alias="RATE_LIMIT_MAX_REQUESTS")
+    rate_limit_window_seconds: int = Field(default=60, validation_alias="RATE_LIMIT_WINDOW_SECONDS")
     commit_sha: str = Field(default="dev")
     llm_provider: str = Field(default="ollama", validation_alias="LLM_PROVIDER")
     ollama_base_url: str = Field(

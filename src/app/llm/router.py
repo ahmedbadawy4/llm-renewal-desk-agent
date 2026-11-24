@@ -36,6 +36,7 @@ class ModelRouter:
                 model=self.settings.ollama_model,
                 base_url=self.settings.ollama_base_url,
                 cost_per_1k_tokens=0.0,
+                max_tokens=self.settings.max_output_tokens,
             )
             self._circuit_breakers["ollama"] = CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 
@@ -50,6 +51,7 @@ class ModelRouter:
                 base_url=openai_base_url,
                 api_key=openai_api_key,
                 cost_per_1k_tokens=0.002,
+                max_tokens=self.settings.max_output_tokens,
             )
             self._circuit_breakers["openai"] = CircuitBreaker(failure_threshold=5, recovery_timeout=60.0)
 

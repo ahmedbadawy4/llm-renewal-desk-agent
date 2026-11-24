@@ -8,8 +8,10 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_db_instance" "main" {
   identifier = "${var.app_name}-db"
 
-  engine         = "postgres"
-  engine_version = "15.4"
+  engine = "postgres"
+  # Major version only: AWS picks the current minor release, which includes the
+  # pgvector extension.
+  engine_version = "15"
   instance_class = var.instance_class
 
   allocated_storage     = var.allocated_storage
@@ -30,9 +32,9 @@ resource "aws_db_instance" "main" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "mon:04:00-mon:05:00"
 
-  skip_final_snapshot       = var.skip_final_snapshot
-  final_snapshot_identifier  = "${var.app_name}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
-  deletion_protection        = var.deletion_protection
+  skip_final_snapshot          = var.skip_final_snapshot
+  final_snapshot_identifier    = "${var.app_name}-final-snapshot"
+  deletion_protection          = var.deletion_protection
   performance_insights_enabled = true
 
   tags = var.tags

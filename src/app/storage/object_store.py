@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Dict
 
@@ -27,14 +28,36 @@ def _resolve_default_dir() -> str:
 DATA_ROOT = Path(os.environ.get("DATA_DIR", _resolve_default_dir()))
 
 
+class InvalidStorageNameError(ValueError):
+    """A vendor id or file name that cannot be used as a path inside the data directory."""
+
+
+# Vendor ids become directory names, so they must start with a letter or digit and
+# cannot contain a path separator. This rules out "." and "..".
+_VENDOR_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+
+
 def vendor_dir(vendor_id: str) -> Path:
+    if not _VENDOR_ID_PATTERN.fullmatch(vendor_id):
+        raise InvalidStorageNameError(
+            "Invalid vendor_id: use 1 to 64 letters, digits, '_', '-' or '.', starting with a letter or digit"
+        )
     path = DATA_ROOT / vendor_id
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
+def _safe_filename(filename: str) -> str:
+    """Replace path separators so an uploaded name stays inside the vendor directory."""
+    name = re.sub(r"[\\/\x00]+", "_", filename)
+    if name in {"", ".", ".."}:
+        raise InvalidStorageNameError("Invalid file name")
+    return name
+
+
 def store_file(vendor_id: str, filename: str, data: bytes, doc_type: str | None = None, encrypt: bool = True) -> Path:
     base = vendor_dir(vendor_id)
+    filename = _safe_filename(filename)
     target = base / filename
 
     if encrypt and filename.lower().endswith((".txt", ".csv")):
