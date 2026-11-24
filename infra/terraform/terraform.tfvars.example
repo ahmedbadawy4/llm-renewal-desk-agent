@@ -9,3 +9,9 @@ app_image   = "<account-id>.dkr.ecr.us-east-1.amazonaws.com/renewal-desk:<tag>"
 # private_subnet_ids = ["subnet-aaaa", "subnet-bbbb"]
 # public_subnet_ids  = ["subnet-cccc", "subnet-dddd"]
 # db_allowed_cidr_blocks = ["10.20.0.0/16"]   # CIDR of that VPC
+
+# Role for the GitHub Actions deploy workflow (OIDC). Leave github_repository
+# empty to create no role. Set create_github_oidc_provider to false when the
+# AWS account already has the GitHub identity provider.
+# github_repository           = "<owner>/<repository>"
+# create_github_oidc_provider = true

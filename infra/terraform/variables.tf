@@ -62,3 +62,20 @@ variable "db_max_allocated_storage" {
   type        = number
   default     = 200
 }
+
+variable "github_repository" {
+  description = "GitHub repository (owner/name) whose deploy workflow can assume the deploy role through OIDC. Leave empty to create no role"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?$", var.github_repository))
+    error_message = "github_repository must be empty or look like owner/name."
+  }
+}
+
+variable "create_github_oidc_provider" {
+  description = "Create the GitHub OIDC identity provider. An account can have only one, so set false when it already exists"
+  type        = bool
+  default     = true
+}
