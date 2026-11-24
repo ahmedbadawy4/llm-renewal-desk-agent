@@ -75,13 +75,20 @@ terraform validate
 
 [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) is a manual workflow (`workflow_dispatch`). It builds the image, pushes it to ECR, registers a new task definition revision with the new image, updates the service and runs `scripts/migrate.py` in a running task with `aws ecs execute-command`. The service has `enable_execute_command` set for this, and Terraform ignores later changes of the task definition so that `terraform apply` does not undo a deployment.
 
-It reads `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from the repository secrets and runs in the GitHub environment `production`, where required reviewers can be set.
+It runs in the GitHub environment `production`, where required reviewers can be set, and gets AWS credentials through OpenID Connect (OIDC). No access keys are stored in GitHub. The region is `us-east-1`, set in the `env` block of the workflow.
+
+What you need to set up first, in the AWS account that runs the stack:
+
+1. An IAM OIDC identity provider for GitHub (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`).
+2. An IAM role whose trust policy allows only this repository and the `production` environment. The `sub` condition is `repo:<owner>/<repository>:environment:production`.
+3. Permissions on that role for what the workflow calls: `ecr:GetAuthorizationToken`, the ECR push actions on the `renewal-desk` repository, `ecs:DescribeTaskDefinition`, `ecs:RegisterTaskDefinition`, `ecs:UpdateService`, `ecs:DescribeServices`, `ecs:ListTasks`, `ecs:DescribeTasks` and `ecs:ExecuteCommand`, and `iam:PassRole` for the task role and the execution role of the service.
+4. In the `production` environment of the repository, a variable `AWS_ROLE_ARN` with the ARN of that role. The first step of the workflow stops with a clear message when it is missing.
 
 ## Limits
 
 - **The database password is an ECS environment value.** `DATABASE_URL` is passed as a plain container environment variable and the password is part of the Terraform state. The ECS module already has a `container_secrets` input for a move to AWS Secrets Manager.
 - **HTTP only.** The load balancer has a listener on port 80. HTTPS needs an ACM certificate and a second listener.
 - **NAT gateway cost.** The registry VPC module is called with `enable_nat_gateway = true` and its default of one NAT gateway per private subnet, which bills per hour. A development setup can set `single_nat_gateway = true` in `vpc.tf`.
-- **Static AWS keys in the deploy workflow.** Switching to GitHub OIDC with an IAM role removes the stored keys.
+- **The deploy role is not created here.** This Terraform does not create the GitHub OIDC provider or the IAM role that the deploy workflow assumes, and it does not create the ECR repository.
 - **S3 is not used by the application yet.** The task role has no S3 permissions, because the application writes files to local disk.
 - **Local disk in the tasks.** Uploaded files and the job queue live in the task, so they are lost when a task stops and are not shared between tasks.

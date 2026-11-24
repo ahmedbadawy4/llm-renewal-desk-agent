@@ -74,7 +74,7 @@ PostgreSQL 15 with the pgvector extension. Five Alembic migrations create `docum
 | `charts/renewal-desk/` | Helm chart for the same stack plus an optional in-cluster Ollama and the UI |
 | `infra/terraform/` | VPC, ALB, ECS Fargate, RDS and S3 (see its README for the variables and the backend) |
 | `.github/workflows/ci.yml` | Lint, type check, tests, eval smoke run, secret scan, image build, Helm lint and render, Terraform format and validate |
-| `.github/workflows/deploy.yml` | Manual `workflow_dispatch` pipeline: builds the image, pushes it to ECR, registers a task definition with the new image, updates the ECS service and runs the migrations through ECS Exec. It needs the AWS access-key secrets, the cluster and service that Terraform creates, and an ECR repository named `renewal-desk` that Terraform does not create |
+| `.github/workflows/deploy.yml` | Manual `workflow_dispatch` pipeline: builds the image, pushes it to ECR, registers a task definition with the new image, updates the ECS service and runs the migrations through ECS Exec. It signs in to AWS through OIDC with the IAM role in the `AWS_ROLE_ARN` variable of the `production` environment, and it needs the cluster and service that Terraform creates and an ECR repository named `renewal-desk` that Terraform does not create |
 | `ui/`, `ui-react/` | A static demo page and the sources of a Next.js UI |
 
 ## Present but not connected

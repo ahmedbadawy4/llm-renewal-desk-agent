@@ -10,6 +10,10 @@ env:
   ECS_CLUSTER: renewal-desk-cluster
   ECS_TASK_DEFINITION: renewal-desk
 
+permissions:
+  contents: read
+  id-token: write # needed to get AWS credentials through OIDC
+
 jobs:
   deploy:
     name: Deploy to ECS
@@ -20,11 +24,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check the AWS role is configured
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_ROLE_ARN}" ]; then
+            echo "::error::Set the variable AWS_ROLE_ARN in the production environment (Settings, Environments, production). See infra/terraform/README.md."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
