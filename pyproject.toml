@@ -8,29 +8,29 @@ packages = [{ include = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.111.0"
-uvicorn = { extras = ["standard"], version = "^0.30.0" }
+fastapi = ">=0.111,<0.142"
+uvicorn = { extras = ["standard"], version = ">=0.30,<0.55" }
 pydantic = "^2.7.0"
 pydantic-settings = "^2.2.1"
-httpx = "^0.27.0"
+httpx = ">=0.27,<0.29"
 psycopg = { version = "^3.1.18", extras = ["binary"] }
 psycopg2-binary = "^2.9.9"
 opentelemetry-sdk = "^1.25.0"
 opentelemetry-exporter-otlp = "^1.25.0"
-prometheus-client = "^0.20.0"
-pymupdf = "^1.24.0"
-pgvector = "^0.3.0"
-sentence-transformers = "^2.3.0"
+prometheus-client = ">=0.20,<0.27"
+pymupdf = ">=1.24,<3.0"
+pgvector = ">=0.3,<0.6"
+sentence-transformers = ">=2.3,<7.0"
 alembic = "^1.13.0"
 sqlalchemy = "^2.0.0"
-cryptography = "^42.0.0"
+cryptography = ">=42,<51"
 psycopg-pool = "^3.2.0"
 scipy = "^1.11.0"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.2.0"
-ruff = "^0.4.4"
-mypy = "^1.10.0"
+pytest = ">=8.2,<10.0"
+ruff = ">=0.4.4,<0.18.0"
+mypy = ">=1.10,<3.0"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
