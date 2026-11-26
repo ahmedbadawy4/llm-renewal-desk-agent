@@ -283,4 +283,4 @@ helm upgrade --install renewal-desk charts/renewal-desk \
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE).
+Copyright 2025-2026 MASHREQ OÜ. Licensed under the Apache License 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE).
